@@ -64,8 +64,8 @@ export function useAllocation(
   });
 
   const candidates = (data?.[0]?.result as AllocationCandidate[] | undefined) ?? [];
-  const totalVotes = (data?.[1]?.result as bigint | undefined) ?? 0n;
-  const eligibilityRoot = (data?.[2]?.result as bigint | undefined) ?? 0n;
+  const totalVotes = (data?.[1]?.result as bigint | undefined) ?? BigInt(0);
+  const eligibilityRoot = (data?.[2]?.result as bigint | undefined) ?? BigInt(0);
   const currentSenators = (data?.[3]?.result as [`0x${string}`, `0x${string}`] | undefined) ?? [
     "0x0000000000000000000000000000000000000000" as `0x${string}`,
     "0x0000000000000000000000000000000000000000" as `0x${string}`,
