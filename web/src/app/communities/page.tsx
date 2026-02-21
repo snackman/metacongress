@@ -41,7 +41,7 @@ function NftThumbnail({
 
   if (!imageUrl) {
     return (
-      <div className="w-8 h-8 rounded bg-gray-800 flex-shrink-0" />
+      <div className="w-full aspect-square rounded bg-gray-800" />
     );
   }
 
@@ -49,7 +49,7 @@ function NftThumbnail({
     <img
       src={imageUrl}
       alt={`#${tokenId.toString()}`}
-      className="w-8 h-8 rounded object-cover flex-shrink-0"
+      className="w-full aspect-square rounded object-cover"
     />
   );
 }
@@ -128,7 +128,7 @@ function CommunityCard({
               {allocationCandidates.length} candidate
               {allocationCandidates.length !== 1 ? "s" : ""}
             </p>
-            <div className="flex gap-1.5 flex-wrap">
+            <div className="grid grid-cols-4 gap-1.5">
               {topCandidates.map((candidate, i) => (
                 <NftThumbnail
                   key={i}
