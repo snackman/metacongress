@@ -62,6 +62,7 @@ contract SenateAllocation {
     event PlatformUpdated(address indexed candidate, string newPlatform);
     event VoteAllocated(uint256 indexed nullifier, uint256 candidateIndex, string comment);
     event VoteReallocated(uint256 indexed nullifier, uint256 oldCandidateIndex, uint256 newCandidateIndex, string comment);
+    event VoteWithdrawn(uint256 indexed nullifier, uint256 oldCandidateIndex);
     event EligibilityRootUpdated(uint256 newRoot);
     event SenatorsChanged(address[2] newSenators);
 
@@ -80,6 +81,7 @@ contract SenateAllocation {
     error EmptyName();
     error OnlyFactory();
     error SameCandidate();
+    error NoExistingVote();
 
     constructor(
         address _nftContract,
@@ -189,6 +191,38 @@ contract SenateAllocation {
 
             emit VoteAllocated(proof.nullifier, proof.message, comment);
         }
+
+        _updateSenators();
+    }
+
+    /// @notice Withdraw an existing vote without reallocating to another candidate.
+    /// @param proof A valid Semaphore proof. proof.message is ignored (can be any value).
+    function withdrawVote(
+        ISemaphore.SemaphoreProof calldata proof
+    ) external {
+        if (eligibilityRoot == 0) revert NoEligibilityRoot();
+        if (proof.merkleTreeRoot != eligibilityRoot) revert InvalidRoot();
+        if (proof.scope != uint256(uint160(address(this)))) revert InvalidScope();
+
+        // Verify the ZK proof
+        verifier.verifyProof(
+            proof.merkleTreeDepth,
+            proof.merkleTreeRoot,
+            proof.nullifier,
+            proof.message,
+            proof.scope,
+            proof.points
+        );
+
+        uint256 existing = nullifierToCandidate[proof.nullifier];
+        if (existing == 0) revert NoExistingVote();
+
+        uint256 oldIdx = existing - 1;
+        candidates[oldIdx].voteCount--;
+        totalVotes--;
+        nullifierToCandidate[proof.nullifier] = 0;
+
+        emit VoteWithdrawn(proof.nullifier, oldIdx);
 
         _updateSenators();
     }

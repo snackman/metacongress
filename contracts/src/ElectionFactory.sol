@@ -5,12 +5,14 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "./SenateElection.sol";
-import "./SenateElectionV2.sol";
-import "./SenateElectionV3.sol";
 import "./SenateAllocation.sol";
+import "./SenateElectionV3.sol";
 import "./interfaces/ISemaphore.sol";
 import "./interfaces/ISemaphoreVerifier.sol";
+
+interface ICryptoPunks {
+    function punkIndexToAddress(uint256) external view returns (address);
+}
 
 interface ISenateSafeModule {
     function rotateSenators(
@@ -231,40 +233,7 @@ contract ElectionFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     //  Elections
     // ══════════════════════════════════════
 
-    function createElection(address nftContract) external returns (address) {
-        if (!whitelisted[nftContract]) revert NotWhitelisted();
-
-        uint256 cycleNum = currentCycle[nftContract];
-
-        if (cycleNum > 0) {
-            address prev = elections[nftContract][cycleNum - 1];
-            if (prev != address(0)) {
-                // Check finalization on either V1 or V2 elections
-                // V2 Finalized == 3, V1 Finalized == 2; both return uint8 via phase()
-                SenateElectionV2 prevElection = SenateElectionV2(prev);
-                if (prevElection.phase() != SenateElectionV2.ElectionPhase.Finalized) {
-                    revert ActiveElectionExists();
-                }
-            }
-        }
-
-        bytes32 salt = keccak256(abi.encodePacked(nftContract, cycleNum));
-        SenateElectionV2 election = new SenateElectionV2{salt: salt}(
-            nftContract,
-            cycleNum,
-            address(this),
-            defaultVotingDuration,
-            isCryptoPunks[nftContract],
-            semaphore,
-            defaultRegistrationDuration
-        );
-
-        elections[nftContract][cycleNum] = address(election);
-        currentCycle[nftContract] = cycleNum + 1;
-
-        emit ElectionCreated(nftContract, cycleNum, address(election));
-        return address(election);
-    }
+    // createElection (V2) removed — use createAllocation for new communities
 
     function onElectionFinalized(address nftContract, address[2] calldata newWinners) external {
         uint256 cycleNum = currentCycle[nftContract];
@@ -451,61 +420,14 @@ contract ElectionFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     //  V3 Elections
     // ══════════════════════════════════════
 
-    function createElectionV3(address nftContract) external returns (address) {
-        if (!whitelisted[nftContract]) revert NotWhitelisted();
-        if (address(semaphoreVerifier) == address(0)) revert VerifierNotSet();
-
-        uint256 cycleNum = currentCycle[nftContract];
-
-        if (cycleNum > 0) {
-            address prev = elections[nftContract][cycleNum - 1];
-            if (prev != address(0)) {
-                // V3 Finalized == 2, V2 Finalized == 3
-                // Detect version by checking if commitmentDeadline() exists
-                if (_isV3Election(prev)) {
-                    if (SenateElectionV3(prev).phase() != SenateElectionV3.ElectionPhase.Finalized) {
-                        revert ActiveElectionExists();
-                    }
-                } else {
-                    if (SenateElectionV2(prev).phase() != SenateElectionV2.ElectionPhase.Finalized) {
-                        revert ActiveElectionExists();
-                    }
-                }
-            }
-        }
-
-        uint256 duration = defaultCommitmentCollectionDuration > 0
-            ? defaultCommitmentCollectionDuration
-            : 3 days;
-
-        bytes32 salt = keccak256(abi.encodePacked(nftContract, cycleNum, "v3"));
-        SenateElectionV3 election = new SenateElectionV3{salt: salt}(
-            nftContract,
-            cycleNum,
-            address(this),
-            defaultVotingDuration,
-            isCryptoPunks[nftContract],
-            semaphoreVerifier,
-            duration
-        );
-
-        elections[nftContract][cycleNum] = address(election);
-        currentCycle[nftContract] = cycleNum + 1;
-
-        emit ElectionV3Created(nftContract, cycleNum, address(election));
-        return address(election);
-    }
+    // createElectionV3 removed — use createAllocation for new communities
 
     function openElectionVoting(address election, uint256 _eligibilityRoot) external onlyOwner {
         SenateElectionV3(election).openVoting(_eligibilityRoot);
         emit ElectionVotingOpened(election, _eligibilityRoot);
     }
 
-    function _isV3Election(address election) internal view returns (bool) {
-        // V3 elections have a commitmentDeadline function; V2 does not.
-        (bool success,) = election.staticcall(abi.encodeWithSignature("commitmentDeadline()"));
-        return success;
-    }
+    // _isV3Election removed — no longer needed without createElectionV3
 
     // ══════════════════════════════════════
     //  Allocations — ongoing vote allocation

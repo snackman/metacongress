@@ -1,29 +1,43 @@
-# Dependencies
-node_modules/
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Next.js
-web/.next/
-web/out/
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
 
-# Foundry
-contracts/out/
-contracts/cache/
+# testing
+/coverage
 
-# Environment
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
 .env
-.env.local
-.env.*.local
+
+# secrets
 secrets.md
 
-# OS
-.DS_Store
-Thumbs.db
+# foundry broadcast artifacts
+contracts/broadcast/
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
+# vercel
+.vercel
 
-# Claude
-.claude/
+# typescript
+*.tsbuildinfo
+next-env.d.ts
