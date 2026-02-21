@@ -183,7 +183,7 @@ export function AllocationBooth({
           {candidates
             .slice()
             .sort((a, b) => Number(b.voteCount - a.voteCount))
-            .map((candidate, i) => {
+            .map((candidate) => {
               const originalIndex = candidates.indexOf(candidate);
               return (
                 <CandidateCard

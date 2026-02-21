@@ -14,7 +14,6 @@ import {
 import {
   useAllocationAddress,
   useAllocation,
-  type AllocationCandidate,
 } from "@/hooks/useAllocation";
 import { useNominations, Nomination } from "@/hooks/useNominations";
 import { AddressDisplay } from "@/components/AddressDisplay";

@@ -25,7 +25,6 @@ export function DelegateButton({
     undelegateFromSenate,
     isPending,
     isConfirming,
-    isSuccess,
     currentDelegate,
   } = useDelegation(tokenAddress);
 
