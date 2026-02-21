@@ -31,7 +31,7 @@ export const DAO_TOKENS = [
     symbol: "SPORK",
     address: "0x9CA6a77C8B38159fd2dA9Bd25bc3E259C33F5E39" as `0x${string}`,
     chain: "polygon" as const,
-    logo: "https://assets.coingecko.com/coins/images/23358/standard/sporkdao.PNG?1696522573",
+    logo: "/tokens/spork.png",
   },
   {
     name: "ENS",

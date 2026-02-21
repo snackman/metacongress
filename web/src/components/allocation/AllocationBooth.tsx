@@ -280,9 +280,9 @@ export function AllocationBooth({
                 {isGeneratingProof
                   ? "Generating ZK proof..."
                   : isSending
-                  ? "Confirm in wallet..."
+                  ? "Submitting vote..."
                   : isConfirming
-                  ? "Confirming..."
+                  ? "Confirming on-chain..."
                   : `Allocate Vote (NFT #${activeTokenId})`}
               </button>
 

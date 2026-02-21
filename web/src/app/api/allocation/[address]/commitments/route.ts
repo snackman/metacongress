@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPublicClient, http, getAddress, verifyMessage } from "viem";
+import { createPublicClient, http, getAddress, verifyMessage, keccak256, toBytes } from "viem";
 import { mainnet } from "viem/chains";
 import { Identity } from "@semaphore-protocol/core";
 import * as fs from "fs";
 import * as path from "path";
 
 const COMMITMENTS_DIR = path.join(process.cwd(), "commitments");
+
+/** Delay (ms) before a commitment is included in the active Merkle tree.
+ *  Default 0 for dev; set COMMITMENT_DELAY_MS=86400000 in production for 24h. */
+const COMMITMENT_DELAY_MS = Number(process.env.COMMITMENT_DELAY_MS ?? "0");
 
 const ERC721_OWNER_OF_ABI = [
   {
@@ -36,9 +40,9 @@ function getCommitmentsPath(allocationAddress: string): string {
 }
 
 interface StoredCommitment {
-  wallet: string;
-  tokenId: string;
+  ownerHash: string;
   commitment: string;
+  submittedAt: number;
 }
 
 function readCommitments(allocationAddress: string): StoredCommitment[] {
@@ -54,6 +58,11 @@ function writeCommitments(allocationAddress: string, commitments: StoredCommitme
   }
   const filePath = getCommitmentsPath(allocationAddress);
   fs.writeFileSync(filePath, JSON.stringify(commitments, null, 2));
+}
+
+/** Compute a deterministic hash of wallet+tokenId for deduplication without storing raw values. */
+function computeOwnerHash(wallet: string, tokenId: string): string {
+  return keccak256(toBytes(`${wallet.toLowerCase()}:${tokenId}`));
 }
 
 export async function POST(
@@ -127,17 +136,17 @@ export async function POST(
       );
     }
 
-    // 4. Store commitment (upsert per wallet+tokenId — allow re-submission to update)
+    // 4. Store commitment using ownerHash for deduplication (no raw wallet stored)
+    const ownerHash = computeOwnerHash(wallet, tokenId);
     const commitments = readCommitments(allocationAddress);
     const existingIdx = commitments.findIndex(
-      (c) =>
-        c.wallet.toLowerCase() === wallet.toLowerCase() &&
-        c.tokenId === tokenId
+      (c) => c.ownerHash === ownerHash
     );
+    const now = Date.now();
     if (existingIdx >= 0) {
-      commitments[existingIdx] = { wallet, tokenId, commitment };
+      commitments[existingIdx] = { ownerHash, commitment, submittedAt: now };
     } else {
-      commitments.push({ wallet, tokenId, commitment });
+      commitments.push({ ownerHash, commitment, submittedAt: now });
     }
     writeCommitments(allocationAddress, commitments);
 
@@ -159,7 +168,13 @@ export async function GET(
     const { address: allocationAddress } = await params;
     const commitments = readCommitments(allocationAddress);
 
-    const commitmentValues = commitments.map((c) => c.commitment);
+    // Only include commitments that have matured past the configured delay
+    const now = Date.now();
+    const matured = commitments.filter(
+      (c) => now - c.submittedAt >= COMMITMENT_DELAY_MS
+    );
+
+    const commitmentValues = matured.map((c) => c.commitment);
 
     let root = "0";
     if (commitmentValues.length > 0) {
