@@ -199,13 +199,15 @@ function NominateTokenForm() {
                         : "border-gray-700 bg-gray-800 hover:border-gray-500"
                     }`}
                   >
-                    <Image
-                      src={token.logo}
-                      alt={token.name}
-                      width={32}
-                      height={32}
-                      className="rounded-full"
-                    />
+                    <div className="w-8 h-8 rounded-full bg-gray-800 overflow-hidden flex items-center justify-center flex-shrink-0">
+                      <Image
+                        src={token.logo}
+                        alt={token.name}
+                        width={32}
+                        height={32}
+                        className="object-contain"
+                      />
+                    </div>
                     <div>
                       <p className="text-sm font-medium text-white">{token.name}</p>
                       <p className="text-xs text-gray-400">{token.symbol}</p>

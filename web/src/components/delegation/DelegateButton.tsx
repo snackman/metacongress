@@ -39,13 +39,15 @@ export function DelegateButton({
     <div className="p-6 rounded-xl bg-gray-900 border border-gray-800">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <Image
-            src={tokenLogo}
-            alt={tokenName}
-            width={40}
-            height={40}
-            className="rounded-full"
-          />
+          <div className="w-10 h-10 rounded-full bg-gray-800 overflow-hidden flex items-center justify-center">
+            <Image
+              src={tokenLogo}
+              alt={tokenName}
+              width={40}
+              height={40}
+              className="object-contain"
+            />
+          </div>
           <div>
             <h3 className="font-semibold text-lg text-white">{tokenName}</h3>
             <p className="text-sm text-gray-500">{tokenSymbol}</p>
