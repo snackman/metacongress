@@ -29,8 +29,8 @@ export const DAO_TOKENS = [
   {
     name: "SporkDAO",
     symbol: "SPORK",
-    address: "0xb624FdE1a972B1C89eC1dAD691442d5E8E891469" as `0x${string}`,
-    chain: "ethereum" as const,
+    address: "0x9CA6a77C8B38159fd2dA9Bd25bc3E259C33F5E39" as `0x${string}`,
+    chain: "polygon" as const,
     logo: "https://assets.coingecko.com/coins/images/23358/standard/sporkdao.PNG?1696522573",
   },
   {
@@ -62,6 +62,17 @@ export const DAO_TOKENS = [
     logo: "/tokens/op.png",
   },
 ] as const;
+
+const CHAIN_IDS = {
+  ethereum: 1,
+  polygon: 137,
+  arbitrum: 42161,
+  optimism: 10,
+} as const;
+
+export function getChainId(chain: string): number {
+  return CHAIN_IDS[chain as keyof typeof CHAIN_IDS] ?? 1;
+}
 
 export function getCollectionBySlug(slug: string) {
   return SUPPORTED_COLLECTIONS.find((c) => c.slug === slug);

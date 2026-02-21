@@ -28,6 +28,13 @@ function useAllocationCommitments(
   });
 }
 
+// Sentinel value used as proof.message for withdraw operations.
+// The contract ignores proof.message for withdrawVote, but the ZK proof
+// generation requires a message value. Using type(uint256).max as sentinel.
+const WITHDRAW_SENTINEL = BigInt(
+  "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+);
+
 export function useAllocateVote(
   allocationAddress: `0x${string}` | undefined
 ) {
@@ -96,8 +103,56 @@ export function useAllocateVote(
     [allocationAddress, commitmentsData, scope, writeContract]
   );
 
+  const withdrawVote = useCallback(
+    async (identity: Identity) => {
+      if (!allocationAddress || !commitmentsData?.commitments?.length || !scope)
+        return;
+
+      setIsGeneratingProof(true);
+      try {
+        const group = new Group(commitmentsData.commitments.map(BigInt));
+
+        const proof = await generateProof(
+          identity,
+          group,
+          WITHDRAW_SENTINEL,
+          scope
+        );
+
+        writeContract({
+          address: allocationAddress,
+          abi: SENATE_ALLOCATION_ABI,
+          functionName: "withdrawVote",
+          args: [
+            {
+              merkleTreeDepth: BigInt(proof.merkleTreeDepth),
+              merkleTreeRoot: BigInt(proof.merkleTreeRoot),
+              nullifier: BigInt(proof.nullifier),
+              message: BigInt(proof.message),
+              scope: BigInt(proof.scope),
+              points: proof.points.map(BigInt) as unknown as readonly [
+                bigint,
+                bigint,
+                bigint,
+                bigint,
+                bigint,
+                bigint,
+                bigint,
+                bigint,
+              ],
+            },
+          ],
+        });
+      } finally {
+        setIsGeneratingProof(false);
+      }
+    },
+    [allocationAddress, commitmentsData, scope, writeContract]
+  );
+
   return {
     allocateVote,
+    withdrawVote,
     isGeneratingProof,
     isSending,
     isConfirming,

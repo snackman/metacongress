@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { useAccount } from "wagmi";
 import { getCollectionBySlug } from "@/lib/constants";
 import { getNFTMetadata } from "@/lib/alchemy";
 import {
@@ -9,9 +11,12 @@ import {
   useAllocation,
   type AllocationCandidate,
 } from "@/hooks/useAllocation";
+import { useIsSenator } from "@/hooks/useSenator";
+import { useCollectionMetadata } from "@/hooks/useCollectionMetadata";
 import { CandidateCard } from "@/components/election/CandidateCard";
 import { DeclareCandidacyAllocation } from "@/components/allocation/DeclareCandidacyAllocation";
 import { AllocationBooth } from "@/components/allocation/AllocationBooth";
+import { EditCollectionModal } from "@/components/EditCollectionModal";
 
 function useNftImage(contractAddress: string, tokenId: bigint) {
   const { data } = useQuery({
@@ -189,6 +194,10 @@ export default function AllocationPage() {
   const params = useParams();
   const slug = params.slug as string;
   const collection = getCollectionBySlug(slug);
+  const { address: walletAddress } = useAccount();
+  const isSenator = useIsSenator(walletAddress as `0x${string}` | undefined);
+  const { metadata } = useCollectionMetadata(collection?.address);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   if (!collection) {
     return (
@@ -200,12 +209,35 @@ export default function AllocationPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <h1 className="text-3xl font-bold text-white mb-2">{collection.name}</h1>
+      <div className="flex items-start justify-between mb-2">
+        <h1 className="text-3xl font-bold text-white">{collection.name}</h1>
+        {isSenator && (
+          <button
+            onClick={() => setShowEditModal(true)}
+            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-300 hover:text-white transition-colors"
+          >
+            Edit Community
+          </button>
+        )}
+      </div>
+      {metadata.description && (
+        <p className="text-gray-300 text-sm mb-4">{metadata.description}</p>
+      )}
       <p className="text-gray-400 mb-8">
         Ongoing vote allocation — the top 2 candidates are the current senators.
         Allocate or change your vote at any time.
       </p>
       <AllocationContent collectionAddress={collection.address} />
+
+      {showEditModal && (
+        <EditCollectionModal
+          collectionAddress={collection.address}
+          currentLogoUrl={metadata.logoUrl}
+          currentDescription={metadata.description}
+          onClose={() => setShowEditModal(false)}
+          onSaved={() => {}}
+        />
+      )}
     </div>
   );
 }

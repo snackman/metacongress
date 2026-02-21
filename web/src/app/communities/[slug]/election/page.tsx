@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { useAccount } from "wagmi";
 import { getCollectionBySlug } from "@/lib/constants";
 import { getNFTMetadata } from "@/lib/alchemy";
 import {
@@ -11,11 +13,14 @@ import {
   type Candidate,
 } from "@/hooks/useElection";
 import { useFinalizeElection, useOpenVoting } from "@/hooks/useVote";
+import { useIsSenator } from "@/hooks/useSenator";
+import { useCollectionMetadata } from "@/hooks/useCollectionMetadata";
 import { CandidateCard } from "@/components/election/CandidateCard";
 import { DeclareCandidacy } from "@/components/election/DeclareCandidacy";
 import { VotingBooth } from "@/components/election/VotingBooth";
 import { VotingBoothV3 } from "@/components/election/VotingBoothV3";
 import { VoterRegistration } from "@/components/election/VoterRegistration";
+import { EditCollectionModal } from "@/components/EditCollectionModal";
 
 function useNftImage(contractAddress: string, tokenId: bigint) {
   const { data } = useQuery({
@@ -296,6 +301,10 @@ export default function ElectionPage() {
   const params = useParams();
   const slug = params.slug as string;
   const collection = getCollectionBySlug(slug);
+  const { address: walletAddress } = useAccount();
+  const isSenator = useIsSenator(walletAddress as `0x${string}` | undefined);
+  const { metadata } = useCollectionMetadata(collection?.address);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   if (!collection) {
     return (
@@ -307,11 +316,34 @@ export default function ElectionPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <h1 className="text-3xl font-bold text-white mb-2">{collection.name}</h1>
+      <div className="flex items-start justify-between mb-2">
+        <h1 className="text-3xl font-bold text-white">{collection.name}</h1>
+        {isSenator && (
+          <button
+            onClick={() => setShowEditModal(true)}
+            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-300 hover:text-white transition-colors"
+          >
+            Edit Community
+          </button>
+        )}
+      </div>
+      {metadata.description && (
+        <p className="text-gray-300 text-sm mb-2">{metadata.description}</p>
+      )}
       <p className="text-gray-500 font-mono text-sm mb-8">
         {collection.address}
       </p>
       <ElectionContent collectionAddress={collection.address} />
+
+      {showEditModal && (
+        <EditCollectionModal
+          collectionAddress={collection.address}
+          currentLogoUrl={metadata.logoUrl}
+          currentDescription={metadata.description}
+          onClose={() => setShowEditModal(false)}
+          onSaved={() => {}}
+        />
+      )}
     </div>
   );
 }

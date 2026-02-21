@@ -27,8 +27,8 @@ const CRYPTO_PUNKS_ABI = [
   },
 ] as const;
 
-function getSignMessage(allocationAddress: string, walletAddress: string): string {
-  return `MetaSenate Vote Allocation\nAllocation: ${allocationAddress}\nWallet: ${walletAddress}`;
+function getSignMessage(allocationAddress: string, walletAddress: string, tokenId: string): string {
+  return `MetaSenate Vote Allocation\nAllocation: ${allocationAddress}\nWallet: ${walletAddress}\nTokenId: ${tokenId}`;
 }
 
 function getCommitmentsPath(allocationAddress: string): string {
@@ -37,6 +37,7 @@ function getCommitmentsPath(allocationAddress: string): string {
 
 interface StoredCommitment {
   wallet: string;
+  tokenId: string;
   commitment: string;
 }
 
@@ -72,7 +73,7 @@ export async function POST(
     }
 
     // 1. Verify signature
-    const message = getSignMessage(allocationAddress, wallet);
+    const message = getSignMessage(allocationAddress, wallet, tokenId);
     const isValid = await verifyMessage({
       address: getAddress(wallet),
       message,
@@ -126,15 +127,17 @@ export async function POST(
       );
     }
 
-    // 4. Store commitment (upsert — allow re-submission to update)
+    // 4. Store commitment (upsert per wallet+tokenId — allow re-submission to update)
     const commitments = readCommitments(allocationAddress);
     const existingIdx = commitments.findIndex(
-      (c) => c.wallet.toLowerCase() === wallet.toLowerCase()
+      (c) =>
+        c.wallet.toLowerCase() === wallet.toLowerCase() &&
+        c.tokenId === tokenId
     );
     if (existingIdx >= 0) {
-      commitments[existingIdx] = { wallet, commitment };
+      commitments[existingIdx] = { wallet, tokenId, commitment };
     } else {
-      commitments.push({ wallet, commitment });
+      commitments.push({ wallet, tokenId, commitment });
     }
     writeCommitments(allocationAddress, commitments);
 

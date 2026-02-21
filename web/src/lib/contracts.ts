@@ -437,6 +437,26 @@ export const SENATE_ALLOCATION_ABI = [
     stateMutability: "nonpayable",
   },
   {
+    type: "function",
+    name: "withdrawVote",
+    inputs: [
+      {
+        name: "proof",
+        type: "tuple",
+        components: [
+          { name: "merkleTreeDepth", type: "uint256" },
+          { name: "merkleTreeRoot", type: "uint256" },
+          { name: "nullifier", type: "uint256" },
+          { name: "message", type: "uint256" },
+          { name: "scope", type: "uint256" },
+          { name: "points", type: "uint256[8]" },
+        ],
+      },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
     type: "event",
     name: "CandidacyDeclared",
     inputs: [
@@ -463,6 +483,14 @@ export const SENATE_ALLOCATION_ABI = [
       { name: "oldCandidateIndex", type: "uint256", indexed: false },
       { name: "newCandidateIndex", type: "uint256", indexed: false },
       { name: "comment", type: "string", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "VoteWithdrawn",
+    inputs: [
+      { name: "nullifier", type: "uint256", indexed: true },
+      { name: "oldCandidateIndex", type: "uint256", indexed: false },
     ],
   },
   {

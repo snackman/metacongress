@@ -8,16 +8,19 @@ import {
   useAccount,
 } from "wagmi";
 import { ERC20_VOTES_ABI, SENATE_SAFE_ADDRESS } from "@/lib/contracts";
+import { getChainId } from "@/lib/constants";
 import { formatUnits } from "viem";
 
-export function useDelegation(tokenAddress: `0x${string}`) {
+export function useDelegation(tokenAddress: `0x${string}`, chain?: string) {
   const { address } = useAccount();
+  const chainId = chain ? getChainId(chain) : undefined;
 
   const { data: balance } = useReadContract({
     address: tokenAddress,
     abi: ERC20_VOTES_ABI,
     functionName: "balanceOf",
     args: [address!],
+    chainId,
     query: { enabled: !!address },
   });
 
@@ -26,6 +29,7 @@ export function useDelegation(tokenAddress: `0x${string}`) {
     abi: ERC20_VOTES_ABI,
     functionName: "delegates",
     args: [address!],
+    chainId,
     query: { enabled: !!address },
   });
 
@@ -35,6 +39,7 @@ export function useDelegation(tokenAddress: `0x${string}`) {
     abi: ERC20_VOTES_ABI,
     functionName: "getVotes",
     args: [SENATE_SAFE_ADDRESS],
+    chainId,
   });
 
   // Legacy (UNI, COMP): getCurrentVotes
@@ -43,6 +48,7 @@ export function useDelegation(tokenAddress: `0x${string}`) {
     abi: ERC20_VOTES_ABI,
     functionName: "getCurrentVotes",
     args: [SENATE_SAFE_ADDRESS],
+    chainId,
   });
 
   // Use whichever returns data
@@ -57,6 +63,7 @@ export function useDelegation(tokenAddress: `0x${string}`) {
     address: tokenAddress,
     abi: ERC20_VOTES_ABI,
     functionName: "decimals",
+    chainId,
   });
 
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
@@ -78,6 +85,7 @@ export function useDelegation(tokenAddress: `0x${string}`) {
       abi: ERC20_VOTES_ABI,
       functionName: "delegate",
       args: [SENATE_SAFE_ADDRESS],
+      chainId,
     });
   }
 
@@ -88,6 +96,7 @@ export function useDelegation(tokenAddress: `0x${string}`) {
       abi: ERC20_VOTES_ABI,
       functionName: "delegate",
       args: [address],
+      chainId,
     });
   }
 

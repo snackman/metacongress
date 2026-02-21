@@ -65,6 +65,7 @@ export default function SenatePage() {
                 tokenAddress={token.address}
                 tokenName={token.name}
                 tokenSymbol={token.symbol}
+                chain={token.chain}
               />
             ))}
           </div>

@@ -21,12 +21,12 @@ export function AllocationBooth({
   collectionAddress,
 }: AllocationBoothProps) {
   const { address } = useAccount();
-  const { identity, hasIdentity, createIdentity, isCreating } =
+  const { identities, hasIdentity, isCreating } =
     useAllocationIdentity(allocationAddress);
   const {
     submitCommitment,
     isSubmitting,
-    isSubmitted,
+    isSubmittedForToken,
     error: commitmentError,
   } = useAllocationCommitment(
     allocationAddress,
@@ -34,6 +34,7 @@ export function AllocationBooth({
   );
   const {
     allocateVote,
+    withdrawVote,
     isGeneratingProof,
     isSending,
     isConfirming,
@@ -43,143 +44,199 @@ export function AllocationBooth({
   } = useAllocateVote(allocationAddress);
   const { data: nfts } = useNFTs(address, collectionAddress);
 
+  const [activeTokenId, setActiveTokenId] = useState<string | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<number | null>(
     null
   );
   const [comment, setComment] = useState("");
-  const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
+  const [votedTokens, setVotedTokens] = useState<Set<string>>(new Set());
+  const [withdrawingTokenId, setWithdrawingTokenId] = useState<string | null>(
+    null
+  );
+  const [withdrawnTokens, setWithdrawnTokens] = useState<Set<string>>(
+    new Set()
+  );
 
   if (!address) {
     return (
       <div className="p-6 rounded-xl bg-gray-900 border border-gray-800 text-center">
-        <p className="text-gray-400">Connect your wallet to allocate your vote</p>
+        <p className="text-gray-400">Connect your wallet to allocate votes</p>
       </div>
     );
   }
 
-  if (isSuccess) {
+  if (!nfts || nfts.length === 0) {
     return (
-      <div className="p-6 rounded-xl bg-green-900/30 border border-green-700 text-center">
-        <p className="text-green-300 font-semibold">
-          Vote allocated successfully!
+      <div className="p-6 rounded-xl bg-gray-900 border border-gray-800 text-center">
+        <p className="text-gray-400">
+          You don&apos;t own any NFTs from this collection.
         </p>
-        <p className="text-gray-400 text-sm mt-2">
-          Your vote is completely private. You can change your allocation at any time.
-        </p>
-        <button
-          onClick={() => {
-            reset();
-            setSelectedCandidate(null);
-            setComment("");
-          }}
-          className="mt-4 px-6 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium transition-colors"
-        >
-          Change Vote
-        </button>
       </div>
     );
   }
 
   const isBusy = isGeneratingProof || isSending || isConfirming;
 
-  async function handleUnlockAndSubmit() {
-    if (!selectedTokenId) return;
-    await submitCommitment(selectedTokenId);
+  async function handleUnlockToken(tokenId: string) {
+    await submitCommitment(tokenId);
+    setActiveTokenId(tokenId);
   }
 
   async function handleVote(e: React.FormEvent) {
     e.preventDefault();
-    if (selectedCandidate === null || !identity) return;
+    if (selectedCandidate === null || !activeTokenId) return;
+
+    const identity = identities.get(activeTokenId);
+    if (!identity) return;
+
     await allocateVote(identity, selectedCandidate, comment.trim());
   }
 
-  const needsCommitment = !hasIdentity || !isSubmitted;
+  async function handleWithdraw(tokenId: string) {
+    const identity = identities.get(tokenId);
+    if (!identity) return;
+
+    setWithdrawingTokenId(tokenId);
+    await withdrawVote(identity);
+  }
+
+  // After successful vote or withdrawal, mark token accordingly and reset
+  if (isSuccess && (activeTokenId || withdrawingTokenId)) {
+    if (withdrawingTokenId) {
+      const justWithdrawnToken = withdrawingTokenId;
+      setWithdrawnTokens((prev) => new Set(prev).add(justWithdrawnToken));
+      setVotedTokens((prev) => {
+        const next = new Set(prev);
+        next.delete(justWithdrawnToken);
+        return next;
+      });
+      setWithdrawingTokenId(null);
+    } else if (activeTokenId) {
+      const justVotedToken = activeTokenId;
+      setVotedTokens((prev) => new Set(prev).add(justVotedToken));
+      setWithdrawnTokens((prev) => {
+        const next = new Set(prev);
+        next.delete(justVotedToken);
+        return next;
+      });
+      setActiveTokenId(null);
+    }
+    setSelectedCandidate(null);
+    setComment("");
+    reset();
+  }
+
+  const activeIdentity = activeTokenId
+    ? identities.get(activeTokenId)
+    : null;
 
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-semibold text-white">
-        Allocate Your Vote
+        Allocate Your Votes
       </h3>
+      <p className="text-sm text-gray-400">
+        You get 1 vote per NFT you own. Unlock each NFT to cast its vote.
+      </p>
 
-      {/* Step 1: Unlock identity + submit commitment */}
-      {needsCommitment && (
-        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
-          <p className="text-sm text-gray-400 mb-3">
-            Unlock your anonymous identity to vote. This signs a message and
-            registers your commitment — no gas required.
-          </p>
+      {/* NFT list with status */}
+      <div className="space-y-2">
+        {nfts.map((nft) => {
+          const tokenId = nft.tokenId;
+          const isUnlocked = hasIdentity(tokenId) || isSubmittedForToken(tokenId);
+          const hasVoted = votedTokens.has(tokenId);
+          const isActive = activeTokenId === tokenId;
 
-          {nfts && nfts.length > 0 && !selectedTokenId && (
-            <div className="mb-4">
-              <label className="block text-sm text-gray-400 mb-2">
-                Select your NFT
-              </label>
-              <div className="flex gap-2 flex-wrap">
-                {nfts.map((nft) => (
-                  <button
-                    key={nft.tokenId}
-                    type="button"
-                    onClick={() => setSelectedTokenId(nft.tokenId)}
-                    className={`px-3 py-1.5 rounded-lg border text-sm ${
-                      selectedTokenId === nft.tokenId
-                        ? "border-indigo-500 bg-indigo-500/10"
-                        : "border-gray-700 hover:border-gray-500"
-                    }`}
-                  >
-                    #{nft.tokenId}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {nfts && nfts.length === 0 && (
-            <p className="text-sm text-red-400">
-              You don&apos;t own any NFTs from this collection.
-            </p>
-          )}
-
-          {selectedTokenId && (
-            <button
-              onClick={handleUnlockAndSubmit}
-              disabled={isCreating || isSubmitting}
-              className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-semibold transition-colors"
+          return (
+            <div
+              key={tokenId}
+              className={`flex items-center justify-between p-3 rounded-lg border ${
+                isActive
+                  ? "border-indigo-500 bg-indigo-500/10"
+                  : hasVoted
+                  ? "border-green-700 bg-green-900/10"
+                  : "border-gray-800 bg-gray-900"
+              }`}
             >
-              {isCreating
-                ? "Sign message in wallet..."
-                : isSubmitting
-                ? "Submitting commitment..."
-                : "Unlock Identity to Vote"}
-            </button>
-          )}
+              <div className="flex items-center gap-3">
+                {nft.image?.thumbnailUrl ? (
+                  <img
+                    src={nft.image.thumbnailUrl}
+                    alt={`#${tokenId}`}
+                    className="w-8 h-8 rounded object-cover"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded bg-gray-800" />
+                )}
+                <span className="text-white font-mono text-sm">
+                  #{tokenId}
+                </span>
+              </div>
 
-          {commitmentError && (
-            <p className="text-red-400 text-sm mt-2">{commitmentError}</p>
-          )}
-        </div>
+              {hasVoted && !withdrawnTokens.has(tokenId) ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-green-400 font-medium">
+                    Voted
+                  </span>
+                  <button
+                    onClick={() => handleWithdraw(tokenId)}
+                    disabled={isBusy || withdrawingTokenId === tokenId}
+                    className="px-2 py-1 text-xs bg-red-700 hover:bg-red-600 disabled:bg-gray-800 disabled:text-gray-600 rounded font-medium transition-colors"
+                  >
+                    {withdrawingTokenId === tokenId
+                      ? "Withdrawing..."
+                      : "Withdraw"}
+                  </button>
+                </div>
+              ) : isActive ? (
+                <span className="text-xs text-indigo-400 font-medium">
+                  Voting...
+                </span>
+              ) : isUnlocked ? (
+                <button
+                  onClick={() => {
+                    setActiveTokenId(tokenId);
+                    setSelectedCandidate(null);
+                    setComment("");
+                  }}
+                  className="px-3 py-1 text-xs bg-indigo-600 hover:bg-indigo-500 rounded font-medium transition-colors"
+                >
+                  Cast Vote
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleUnlockToken(tokenId)}
+                  disabled={isCreating || isSubmitting}
+                  className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 rounded font-medium transition-colors"
+                >
+                  {isCreating || isSubmitting
+                    ? "Unlocking..."
+                    : "Unlock"}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {commitmentError && (
+        <p className="text-red-400 text-sm">{commitmentError}</p>
       )}
 
-      {/* Step 2: Re-derive identity if commitment was already submitted */}
-      {isSubmitted && !hasIdentity && (
-        <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
-          <p className="text-sm text-gray-400 mb-3">
-            Your commitment is registered. Re-derive your identity to allocate
-            your vote.
-          </p>
-          <button
-            onClick={createIdentity}
-            disabled={isCreating}
-            className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-semibold transition-colors"
-          >
-            {isCreating ? "Sign message in wallet..." : "Unlock Identity"}
-          </button>
-        </div>
+      {voteError && withdrawingTokenId && (
+        <p className="text-red-400 text-sm">
+          {voteError.message.includes("NoExistingVote")
+            ? "This NFT has no existing vote to withdraw."
+            : "Withdrawal failed. Please try again."}
+        </p>
       )}
 
-      {/* Candidate selection */}
-      {candidates.length > 0 && (
+      {/* Candidate selection — shown when a token is active */}
+      {activeTokenId && activeIdentity && candidates.length > 0 && (
         <div className="space-y-4">
-          <h4 className="text-sm font-medium text-gray-400">Select a candidate</h4>
+          <h4 className="text-sm font-medium text-gray-400">
+            Select a candidate for NFT #{activeTokenId}
+          </h4>
           {candidates
             .slice()
             .sort((a, b) => Number(b.voteCount - a.voteCount))
@@ -192,59 +249,75 @@ export function AllocationBooth({
                   index={originalIndex}
                   selected={selectedCandidate === originalIndex}
                   onSelect={setSelectedCandidate}
-                  selectable={hasIdentity}
+                  selectable
                   nftImageUrl={candidate.profileImageUri || undefined}
                 />
               );
             })}
+
+          {/* Cast vote form */}
+          {selectedCandidate !== null && (
+            <form onSubmit={handleVote} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">
+                  Comment (optional, max 280 chars)
+                </label>
+                <textarea
+                  maxLength={280}
+                  rows={2}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:border-indigo-500 focus:outline-none resize-none"
+                  placeholder="Why are you voting for this candidate?"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isBusy}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-semibold transition-colors"
+              >
+                {isGeneratingProof
+                  ? "Generating ZK proof..."
+                  : isSending
+                  ? "Confirm in wallet..."
+                  : isConfirming
+                  ? "Confirming..."
+                  : `Allocate Vote (NFT #${activeTokenId})`}
+              </button>
+
+              {isGeneratingProof && (
+                <p className="text-xs text-gray-500 text-center">
+                  Proof generation may take 5-15 seconds
+                </p>
+              )}
+
+              {voteError && (
+                <p className="text-red-400 text-sm">
+                  {voteError.message.includes("SameCandidate")
+                    ? "This NFT already voted for this candidate. Choose a different one to reallocate."
+                    : "Vote failed. Please try again."}
+                </p>
+              )}
+            </form>
+          )}
         </div>
       )}
 
-      {/* Step 3: Cast vote */}
-      {hasIdentity && selectedCandidate !== null && (
-        <form onSubmit={handleVote} className="space-y-4">
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">
-              Comment (optional, max 280 chars)
-            </label>
-            <textarea
-              maxLength={280}
-              rows={2}
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:border-indigo-500 focus:outline-none resize-none"
-              placeholder="Why are you voting for this candidate?"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={isBusy}
-            className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-semibold transition-colors"
-          >
-            {isGeneratingProof
-              ? "Generating ZK proof..."
-              : isSending
-              ? "Confirm in wallet..."
-              : isConfirming
-              ? "Confirming..."
-              : "Allocate Vote"}
-          </button>
-
-          {isGeneratingProof && (
-            <p className="text-xs text-gray-500 text-center">
-              Proof generation may take 5-15 seconds
-            </p>
-          )}
-
-          {voteError && (
-            <p className="text-red-400 text-sm">
-              {voteError.message.includes("SameCandidate")
-                ? "You already voted for this candidate. Choose a different one to reallocate."
-                : "Vote failed. Please try again."}
-            </p>
-          )}
-        </form>
+      {/* Summary */}
+      {(votedTokens.size > 0 || withdrawnTokens.size > 0) && (
+        <div className="p-3 rounded-lg bg-green-900/20 border border-green-800">
+          <p className="text-sm text-green-300">
+            {votedTokens.size} of {nfts.length} NFT
+            {nfts.length !== 1 ? "s" : ""} voted.
+            {withdrawnTokens.size > 0 && (
+              <span className="text-yellow-300">
+                {" "}{withdrawnTokens.size} withdrawn.
+              </span>
+            )}
+            {" "}All votes are anonymous.
+          </p>
+        </div>
       )}
     </div>
   );

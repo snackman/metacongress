@@ -4,8 +4,8 @@ import { useState, useCallback } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { useAllocationIdentity } from "./useAllocationIdentity";
 
-function getSignMessage(allocationAddress: string, walletAddress: string): string {
-  return `MetaSenate Vote Allocation\nAllocation: ${allocationAddress}\nWallet: ${walletAddress}`;
+function getSignMessage(allocationAddress: string, walletAddress: string, tokenId: string): string {
+  return `MetaSenate Vote Allocation\nAllocation: ${allocationAddress}\nWallet: ${walletAddress}\nTokenId: ${tokenId}`;
 }
 
 export function useAllocationCommitment(
@@ -14,10 +14,10 @@ export function useAllocationCommitment(
 ) {
   const { address } = useAccount();
   const { signMessageAsync } = useSignMessage();
-  const { identity, hasIdentity, createIdentity, isCreating } =
+  const { identities, hasAnyIdentity, createIdentity, isCreating } =
     useAllocationIdentity(allocationAddress);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [submittedTokens, setSubmittedTokens] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   const submitCommitment = useCallback(
@@ -28,7 +28,7 @@ export function useAllocationCommitment(
       setError(null);
 
       try {
-        const message = getSignMessage(allocationAddress, address);
+        const message = getSignMessage(allocationAddress, address, tokenId);
         const signature = await signMessageAsync({ message });
 
         const { Identity } = await import("@semaphore-protocol/core");
@@ -55,24 +55,28 @@ export function useAllocationCommitment(
           throw new Error(data.error || "Failed to submit commitment");
         }
 
-        setIsSubmitted(true);
+        // Also create the identity for this token
+        await createIdentity(tokenId);
+
+        setSubmittedTokens((prev) => new Set(prev).add(tokenId));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Submission failed");
       } finally {
         setIsSubmitting(false);
       }
     },
-    [allocationAddress, address, nftContract, signMessageAsync]
+    [allocationAddress, address, nftContract, signMessageAsync, createIdentity]
   );
 
   return {
-    identity,
-    hasIdentity,
+    identities,
+    hasAnyIdentity,
     createIdentity,
     isCreating,
     submitCommitment,
     isSubmitting,
-    isSubmitted,
+    isSubmittedForToken: (tokenId: string) => submittedTokens.has(tokenId),
+    hasAnySubmitted: submittedTokens.size > 0,
     error,
   };
 }

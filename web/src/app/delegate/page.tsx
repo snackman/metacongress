@@ -32,6 +32,7 @@ export default function DelegatePage() {
             tokenName={token.name}
             tokenSymbol={token.symbol}
             tokenLogo={token.logo}
+            chain={token.chain}
           />
         ))}
       </div>

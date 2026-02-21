@@ -2,25 +2,31 @@
 
 import { useReadContract } from "wagmi";
 import { ERC20_VOTES_ABI, SENATE_SAFE_ADDRESS } from "@/lib/contracts";
+import { getChainId } from "@/lib/constants";
 import { formatUnits } from "viem";
 
 interface VotingPowerCardProps {
   tokenAddress: `0x${string}`;
   tokenName: string;
   tokenSymbol: string;
+  chain?: string;
 }
 
 export function VotingPowerCard({
   tokenAddress,
   tokenName,
   tokenSymbol,
+  chain,
 }: VotingPowerCardProps) {
+  const chainId = chain ? getChainId(chain) : undefined;
+
   // Standard ERC20Votes: getVotes
   const { data: votesStandard } = useReadContract({
     address: tokenAddress,
     abi: ERC20_VOTES_ABI,
     functionName: "getVotes",
     args: [SENATE_SAFE_ADDRESS],
+    chainId,
   });
 
   // Legacy (UNI, COMP): getCurrentVotes
@@ -29,6 +35,7 @@ export function VotingPowerCard({
     abi: ERC20_VOTES_ABI,
     functionName: "getCurrentVotes",
     args: [SENATE_SAFE_ADDRESS],
+    chainId,
   });
 
   const votes = votesStandard ?? votesLegacy;
@@ -37,6 +44,7 @@ export function VotingPowerCard({
     address: tokenAddress,
     abi: ERC20_VOTES_ABI,
     functionName: "decimals",
+    chainId,
   });
 
   const formattedVotes = votes

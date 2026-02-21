@@ -16,6 +16,7 @@ import {
   useAllocation,
 } from "@/hooks/useAllocation";
 import { useNominations, Nomination } from "@/hooks/useNominations";
+import { useCollectionMetadata } from "@/hooks/useCollectionMetadata";
 import { AddressDisplay } from "@/components/AddressDisplay";
 
 function NftThumbnail({
@@ -54,6 +55,49 @@ function NftThumbnail({
   );
 }
 
+function CollectionLogo({ contractAddress }: { contractAddress: string }) {
+  const { data: imageUrl } = useQuery({
+    queryKey: ["collection-logo", contractAddress],
+    queryFn: async () => {
+      // Try token #0 first, fall back to #1
+      for (const tokenId of [BigInt(0), BigInt(1)]) {
+        try {
+          const meta = await getNFTMetadata(
+            contractAddress,
+            tokenId.toString()
+          );
+          const url =
+            meta.image?.thumbnailUrl ??
+            meta.image?.cachedUrl ??
+            meta.image?.originalUrl ??
+            null;
+          if (url) return url;
+        } catch {
+          // try next token
+        }
+      }
+      return null;
+    },
+    staleTime: 10 * 60_000,
+  });
+
+  if (!imageUrl) {
+    return (
+      <div className="w-9 h-9 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-300 text-sm font-bold">
+        ?
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={imageUrl}
+      alt="Collection logo"
+      className="w-9 h-9 rounded-full object-cover"
+    />
+  );
+}
+
 function CommunityCard({
   collection,
 }: {
@@ -64,6 +108,7 @@ function CommunityCard({
   const { electionAddress } = useCurrentElection(collection.address);
   const { phase, candidates } = useElection(electionAddress);
   const senators = useCurrentSenators(collection.address);
+  const { metadata } = useCollectionMetadata(collection.address);
 
   const hasAllocation = !!allocationAddress;
 
@@ -97,18 +142,31 @@ function CommunityCard({
     .sort((a, b) => Number(b.voteCount - a.voteCount))
     .slice(0, 8);
 
+  // Use custom logo from metadata if available, otherwise fall back to default
+  const customLogoUrl = metadata.logoUrl;
+
   return (
     <Link href={href}>
       <div className="p-6 rounded-xl bg-gray-900 border border-gray-800 hover:border-gray-600 transition-all cursor-pointer">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <Image
-              src={collection.logo}
-              alt={collection.name}
-              width={36}
-              height={36}
-              className="rounded-full"
-            />
+            {customLogoUrl ? (
+              <img
+                src={customLogoUrl}
+                alt={collection.name}
+                width={36}
+                height={36}
+                className="rounded-full object-cover"
+              />
+            ) : (
+              <Image
+                src={collection.logo}
+                alt={collection.name}
+                width={36}
+                height={36}
+                className="rounded-full"
+              />
+            )}
             <h3 className="font-semibold text-lg text-white">
               {collection.name}
             </h3>
@@ -122,6 +180,11 @@ function CommunityCard({
         <p className="text-sm text-gray-500 mt-1 font-mono">
           {collection.address.slice(0, 6)}...{collection.address.slice(-4)}
         </p>
+        {metadata.description && (
+          <p className="text-sm text-gray-400 mt-2 line-clamp-2">
+            {metadata.description}
+          </p>
+        )}
         {topCandidates.length > 0 && (
           <div className="mt-3">
             <p className="text-xs text-gray-500 mb-2">
@@ -169,9 +232,7 @@ function NominatedCommunityCard({ nomination }: { nomination: Nomination }) {
     <div className="p-6 rounded-xl bg-gray-900 border border-gray-800 border-dashed">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-yellow-500/20 flex items-center justify-center text-yellow-300 text-sm font-bold">
-            ?
-          </div>
+          <CollectionLogo contractAddress={nomination.nftContract} />
           <h3 className="font-semibold text-lg text-white">
             {nomination.name}
           </h3>

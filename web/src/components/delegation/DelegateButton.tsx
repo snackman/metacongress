@@ -9,6 +9,7 @@ interface DelegateButtonProps {
   tokenName: string;
   tokenSymbol: string;
   tokenLogo: string;
+  chain?: string;
 }
 
 export function DelegateButton({
@@ -16,6 +17,7 @@ export function DelegateButton({
   tokenName,
   tokenSymbol,
   tokenLogo,
+  chain,
 }: DelegateButtonProps) {
   const {
     balance,
@@ -26,7 +28,7 @@ export function DelegateButton({
     isPending,
     isConfirming,
     currentDelegate,
-  } = useDelegation(tokenAddress);
+  } = useDelegation(tokenAddress, chain);
 
   const { data: delegateEnsName } = useEnsName({
     address: currentDelegate as `0x${string}` | undefined,
