@@ -80,21 +80,40 @@ export function DeclareCandidacy({
         <label className="block text-sm text-gray-400 mb-2">
           Select your campaign NFT
         </label>
-        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-          {nfts.map((nft) => (
-            <button
-              key={nft.tokenId}
-              type="button"
-              onClick={() => setSelectedNft(nft)}
-              className={`p-2 rounded-lg border text-center text-sm ${
-                selectedNft?.tokenId === nft.tokenId
-                  ? "border-indigo-500 bg-indigo-500/10"
-                  : "border-gray-700 hover:border-gray-500"
-              }`}
-            >
-              #{nft.tokenId}
-            </button>
-          ))}
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+          {nfts.map((nft) => {
+            const imgUrl =
+              nft.image?.thumbnailUrl ??
+              nft.image?.cachedUrl ??
+              nft.image?.originalUrl;
+            return (
+              <button
+                key={nft.tokenId}
+                type="button"
+                onClick={() => setSelectedNft(nft)}
+                className={`rounded-lg border overflow-hidden ${
+                  selectedNft?.tokenId === nft.tokenId
+                    ? "border-indigo-500 ring-2 ring-indigo-500/50"
+                    : "border-gray-700 hover:border-gray-500"
+                }`}
+              >
+                {imgUrl ? (
+                  <img
+                    src={imgUrl}
+                    alt={`#${nft.tokenId}`}
+                    className="w-full aspect-square object-cover"
+                  />
+                ) : (
+                  <div className="w-full aspect-square bg-gray-800 flex items-center justify-center text-gray-500 text-xs">
+                    No image
+                  </div>
+                )}
+                <p className="text-xs text-gray-400 py-1 text-center">
+                  #{nft.tokenId}
+                </p>
+              </button>
+            );
+          })}
         </div>
       </div>
 

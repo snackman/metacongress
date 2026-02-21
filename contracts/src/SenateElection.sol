@@ -7,6 +7,10 @@ interface IElectionFactory {
     function onElectionFinalized(address nftContract, address[2] calldata winners) external;
 }
 
+interface ICryptoPunks {
+    function punkIndexToAddress(uint256 punkIndex) external view returns (address);
+}
+
 contract SenateElection {
     enum ElectionPhase { Registration, Voting, Finalized }
 
@@ -27,10 +31,11 @@ contract SenateElection {
         uint256 timestamp;
     }
 
-    IERC721 public immutable nftContract;
+    address public immutable nftContract;
     uint256 public immutable cycle;
     address public immutable factory;
     uint256 public immutable votingDuration;
+    bool public immutable isCryptoPunks;
 
     ElectionPhase public phase;
     uint256 public votingEndTime;
@@ -74,12 +79,14 @@ contract SenateElection {
         address _nftContract,
         uint256 _cycle,
         address _factory,
-        uint256 _votingDuration
+        uint256 _votingDuration,
+        bool _isCryptoPunks
     ) {
-        nftContract = IERC721(_nftContract);
+        nftContract = _nftContract;
         cycle = _cycle;
         factory = _factory;
         votingDuration = _votingDuration;
+        isCryptoPunks = _isCryptoPunks;
         phase = ElectionPhase.Registration;
     }
 
@@ -88,7 +95,7 @@ contract SenateElection {
         string calldata name,
         string calldata platform
     ) external onlyPhase(ElectionPhase.Registration) {
-        if (nftContract.ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
+        if (_ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
         if (isCandidate[msg.sender]) revert AlreadyCandidate();
         if (bytes(name).length == 0) revert EmptyName();
         if (bytes(name).length > MAX_NAME_LENGTH) revert NameTooLong();
@@ -131,7 +138,7 @@ contract SenateElection {
         uint256 _candidateIndex,
         string calldata comment
     ) external onlyPhase(ElectionPhase.Voting) {
-        if (nftContract.ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
+        if (_ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
         if (hasVoted[tokenId]) revert AlreadyVoted();
         if (_candidateIndex >= candidates.length) revert InvalidCandidateIndex();
         if (bytes(comment).length > MAX_COMMENT_LENGTH) revert CommentTooLong();
@@ -184,7 +191,7 @@ contract SenateElection {
         phase = ElectionPhase.Finalized;
         emit ElectionFinalized(winners);
 
-        IElectionFactory(factory).onElectionFinalized(address(nftContract), winners);
+        IElectionFactory(factory).onElectionFinalized(nftContract, winners);
     }
 
     function getCandidates() external view returns (Candidate[] memory) {
@@ -201,6 +208,13 @@ contract SenateElection {
 
     function getWinners() external view returns (address[2] memory) {
         return winners;
+    }
+
+    function _ownerOf(uint256 tokenId) internal view returns (address) {
+        if (isCryptoPunks) {
+            return ICryptoPunks(nftContract).punkIndexToAddress(tokenId);
+        }
+        return IERC721(nftContract).ownerOf(tokenId);
     }
 
     function _openVoting() internal {

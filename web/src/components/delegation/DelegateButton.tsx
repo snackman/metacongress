@@ -1,35 +1,56 @@
 "use client";
 
+import Image from "next/image";
+import { useEnsName } from "wagmi";
 import { useDelegation } from "@/hooks/useDelegation";
 
 interface DelegateButtonProps {
   tokenAddress: `0x${string}`;
   tokenName: string;
   tokenSymbol: string;
+  tokenLogo: string;
 }
 
 export function DelegateButton({
   tokenAddress,
   tokenName,
   tokenSymbol,
+  tokenLogo,
 }: DelegateButtonProps) {
   const {
     balance,
     isDelegatedToSenate,
     senateVotingPower,
     delegateToSenate,
+    undelegateFromSenate,
     isPending,
     isConfirming,
     isSuccess,
     currentDelegate,
   } = useDelegation(tokenAddress);
 
+  const { data: delegateEnsName } = useEnsName({
+    address: currentDelegate as `0x${string}` | undefined,
+    query: {
+      enabled: !!currentDelegate && !isDelegatedToSenate,
+    },
+  });
+
   return (
     <div className="p-6 rounded-xl bg-gray-900 border border-gray-800">
       <div className="flex items-start justify-between">
-        <div>
-          <h3 className="font-semibold text-lg text-white">{tokenName}</h3>
-          <p className="text-sm text-gray-500">{tokenSymbol}</p>
+        <div className="flex items-center gap-3">
+          <Image
+            src={tokenLogo}
+            alt={tokenName}
+            width={40}
+            height={40}
+            className="rounded-full"
+          />
+          <div>
+            <h3 className="font-semibold text-lg text-white">{tokenName}</h3>
+            <p className="text-sm text-gray-500">{tokenSymbol}</p>
+          </div>
         </div>
         <div className="text-right">
           <p className="text-sm text-gray-400">Your Balance</p>
@@ -47,9 +68,9 @@ export function DelegateButton({
           <p className="text-gray-500">Current Delegate</p>
           <p className="text-gray-300 font-mono text-xs">
             {isDelegatedToSenate
-              ? "MetaSenate"
+              ? "Meta Senate"
               : currentDelegate
-              ? `${currentDelegate.slice(0, 6)}...${currentDelegate.slice(-4)}`
+              ? delegateEnsName ?? `${currentDelegate.slice(0, 6)}...${currentDelegate.slice(-4)}`
               : "None"}
           </p>
         </div>
@@ -64,28 +85,33 @@ export function DelegateButton({
         </div>
       </div>
 
-      <button
-        onClick={delegateToSenate}
-        disabled={
-          isPending ||
-          isConfirming ||
-          isDelegatedToSenate ||
-          Number(balance) === 0
-        }
-        className={`mt-4 w-full py-2.5 rounded-lg font-semibold transition-colors ${
-          isDelegatedToSenate
-            ? "bg-green-900/30 text-green-300 border border-green-800"
-            : "bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-500"
-        }`}
-      >
-        {isSuccess || isDelegatedToSenate
-          ? "Delegated to MetaSenate"
-          : isPending
-          ? "Confirm in wallet..."
-          : isConfirming
-          ? "Confirming..."
-          : "Delegate to MetaSenate"}
-      </button>
+      <div className="mt-4 flex gap-3">
+        {isDelegatedToSenate ? (
+          <button
+            onClick={undelegateFromSenate}
+            disabled={isPending || isConfirming}
+            className="w-full py-2.5 rounded-lg font-semibold transition-colors bg-red-900/30 text-red-300 border border-red-800 hover:bg-red-900/50 disabled:opacity-50"
+          >
+            {isPending
+              ? "Confirm in wallet..."
+              : isConfirming
+              ? "Confirming..."
+              : "Undelegate"}
+          </button>
+        ) : (
+          <button
+            onClick={delegateToSenate}
+            disabled={isPending || isConfirming || Number(balance) === 0}
+            className="w-full py-2.5 rounded-lg font-semibold transition-colors bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-500"
+          >
+            {isPending
+              ? "Confirm in wallet..."
+              : isConfirming
+              ? "Confirming..."
+              : "Delegate to the Senate"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

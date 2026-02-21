@@ -13,6 +13,7 @@ contracts/cache/
 .env
 .env.local
 .env.*.local
+secrets.md
 
 # OS
 .DS_Store

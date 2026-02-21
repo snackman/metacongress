@@ -16,9 +16,12 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "MetaSenate",
+  title: "Meta Senate",
   description:
-    "On-chain governance where NFT communities elect senators to wield delegated DAO voting power.",
+    "A governing body for the metaverse elected from the foremost communities.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEnsName } from "wagmi";
 import { type Candidate } from "@/hooks/useElection";
 
 interface CandidateCardProps {
@@ -9,6 +10,7 @@ interface CandidateCardProps {
   selected?: boolean;
   onSelect?: (index: number) => void;
   selectable?: boolean;
+  nftImageUrl?: string;
 }
 
 export function CandidateCard({
@@ -18,7 +20,10 @@ export function CandidateCard({
   selected,
   onSelect,
   selectable,
+  nftImageUrl,
 }: CandidateCardProps) {
+  const { data: ensName } = useEnsName({ address: candidate.wallet });
+
   return (
     <div
       onClick={() => selectable && onSelect?.(index)}
@@ -32,30 +37,48 @@ export function CandidateCard({
           : "border-gray-700 bg-gray-900"
       }`}
     >
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-lg text-white">
-              {candidate.name}
-            </h3>
-            {isWinner && (
-              <span className="px-2 py-0.5 text-xs font-medium bg-yellow-500/20 text-yellow-300 rounded-full">
-                Senator
+      <div className="flex items-start gap-4">
+        {nftImageUrl && (
+          <img
+            src={nftImageUrl}
+            alt={`NFT #${candidate.nftTokenId.toString()}`}
+            className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+          />
+        )}
+        {!nftImageUrl && candidate.profileImageUri && (
+          <img
+            src={candidate.profileImageUri}
+            alt={`NFT #${candidate.nftTokenId.toString()}`}
+            className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+          />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-lg text-white">
+                  {candidate.name}
+                </h3>
+                {isWinner && (
+                  <span className="px-2 py-0.5 text-xs font-medium bg-yellow-500/20 text-yellow-300 rounded-full">
+                    Senator
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-gray-500 mt-0.5 font-mono">
+                {ensName ?? `${candidate.wallet.slice(0, 6)}...${candidate.wallet.slice(-4)}`}
+              </p>
+              <p className="text-sm text-gray-500">
+                NFT #{candidate.nftTokenId.toString()}
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-2xl font-bold text-white">
+                {candidate.voteCount.toString()}
               </span>
-            )}
+              <p className="text-xs text-gray-500">votes</p>
+            </div>
           </div>
-          <p className="text-sm text-gray-500 mt-1 font-mono">
-            {candidate.wallet.slice(0, 6)}...{candidate.wallet.slice(-4)}
-          </p>
-          <p className="text-sm text-gray-500">
-            NFT #{candidate.nftTokenId.toString()}
-          </p>
-        </div>
-        <div className="text-right">
-          <span className="text-2xl font-bold text-white">
-            {candidate.voteCount.toString()}
-          </span>
-          <p className="text-xs text-gray-500">votes</p>
         </div>
       </div>
       {candidate.platform && (

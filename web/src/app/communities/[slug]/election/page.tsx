@@ -1,16 +1,91 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { getCollectionBySlug } from "@/lib/constants";
+import { getNFTMetadata } from "@/lib/alchemy";
 import {
   useCurrentElection,
   useElection,
   ElectionPhase,
+  type Candidate,
 } from "@/hooks/useElection";
-import { useFinalizeElection } from "@/hooks/useVote";
+import { useFinalizeElection, useOpenVoting } from "@/hooks/useVote";
 import { CandidateCard } from "@/components/election/CandidateCard";
 import { DeclareCandidacy } from "@/components/election/DeclareCandidacy";
 import { VotingBooth } from "@/components/election/VotingBooth";
+import { VotingBoothV3 } from "@/components/election/VotingBoothV3";
+import { VoterRegistration } from "@/components/election/VoterRegistration";
+
+function useNftImage(contractAddress: string, tokenId: bigint) {
+  const { data } = useQuery({
+    queryKey: ["nft-image", contractAddress, tokenId.toString()],
+    queryFn: async () => {
+      const meta = await getNFTMetadata(contractAddress, tokenId.toString());
+      return meta.image?.thumbnailUrl ?? meta.image?.cachedUrl ?? meta.image?.originalUrl ?? null;
+    },
+    staleTime: 5 * 60_000,
+  });
+  return data ?? undefined;
+}
+
+function CandidateWithImage({
+  candidate,
+  index,
+  collectionAddress,
+  isWinner,
+  selected,
+  onSelect,
+  selectable,
+}: {
+  candidate: Candidate;
+  index: number;
+  collectionAddress: string;
+  isWinner?: boolean;
+  selected?: boolean;
+  onSelect?: (index: number) => void;
+  selectable?: boolean;
+}) {
+  const nftImageUrl = useNftImage(collectionAddress, candidate.nftTokenId);
+  return (
+    <CandidateCard
+      candidate={candidate}
+      index={index}
+      isWinner={isWinner}
+      selected={selected}
+      onSelect={onSelect}
+      selectable={selectable}
+      nftImageUrl={nftImageUrl}
+    />
+  );
+}
+
+function PhaseBadge({ phase, isV3 }: { phase: ElectionPhase; isV3?: boolean }) {
+  const config = {
+    [ElectionPhase.Registration]: {
+      label: isV3 ? "Registration / Commitment Collection" : "Registration Open",
+      className: "bg-blue-500/20 text-blue-300",
+    },
+    [ElectionPhase.VoterRegistration]: {
+      label: "Voter Registration",
+      className: "bg-purple-500/20 text-purple-300",
+    },
+    [ElectionPhase.Voting]: {
+      label: "Voting Active",
+      className: "bg-green-500/20 text-green-300",
+    },
+    [ElectionPhase.Finalized]: {
+      label: "Election Finalized",
+      className: "bg-gray-500/20 text-gray-300",
+    },
+  }[phase];
+
+  return (
+    <span className={`px-3 py-1 text-sm font-medium rounded-full ${config.className}`}>
+      {config.label}
+    </span>
+  );
+}
 
 function ElectionContent({
   collectionAddress,
@@ -18,11 +93,25 @@ function ElectionContent({
   collectionAddress: `0x${string}`;
 }) {
   const { electionAddress } = useCurrentElection(collectionAddress);
-  const { phase, candidates, votingEndTime, winners, isLoading } =
-    useElection(electionAddress);
+  const {
+    phase,
+    candidates,
+    votingEndTime,
+    winners,
+    voterRegistrationEndTime,
+    groupId,
+    isLoading,
+    electionVersion,
+    commitmentDeadline,
+  } = useElection(electionAddress);
   const { finalize, isPending: finalizePending } = useFinalizeElection(
     electionAddress ?? "0x0000000000000000000000000000000000000000"
   );
+  const { openVoting, isPending: openVotingPending } = useOpenVoting(
+    electionAddress ?? "0x0000000000000000000000000000000000000000"
+  );
+
+  const isV3 = electionVersion === 3;
 
   if (isLoading) {
     return (
@@ -42,27 +131,40 @@ function ElectionContent({
     );
   }
 
-  const votingEnded =
-    votingEndTime && votingEndTime * 1000 < Date.now();
+  const votingEnded = votingEndTime && votingEndTime * 1000 < Date.now();
+  const registrationEnded =
+    voterRegistrationEndTime && voterRegistrationEndTime * 1000 < Date.now();
+  const commitmentDeadlinePassed =
+    commitmentDeadline && commitmentDeadline * 1000 < Date.now();
 
   return (
     <div className="space-y-8">
       <div className="flex items-center gap-4">
-        <span
-          className={`px-3 py-1 text-sm font-medium rounded-full ${
-            phase === ElectionPhase.Registration
-              ? "bg-blue-500/20 text-blue-300"
-              : phase === ElectionPhase.Voting
-              ? "bg-green-500/20 text-green-300"
-              : "bg-gray-500/20 text-gray-300"
-          }`}
-        >
-          {phase === ElectionPhase.Registration
-            ? "Registration Open"
-            : phase === ElectionPhase.Voting
-            ? "Voting Active"
-            : "Election Finalized"}
-        </span>
+        {phase !== undefined && <PhaseBadge phase={phase} isV3={isV3} />}
+        {/* V2: Show voter registration deadline */}
+        {!isV3 &&
+          voterRegistrationEndTime &&
+          phase === ElectionPhase.VoterRegistration && (
+            <span className="text-sm text-gray-400">
+              {registrationEnded
+                ? "Registration period ended"
+                : `Registration ends ${new Date(
+                    voterRegistrationEndTime * 1000
+                  ).toLocaleDateString()}`}
+            </span>
+          )}
+        {/* V3: Show commitment deadline during registration */}
+        {isV3 &&
+          commitmentDeadline &&
+          phase === ElectionPhase.Registration && (
+            <span className="text-sm text-gray-400">
+              {commitmentDeadlinePassed
+                ? "Commitment collection ended — awaiting voting"
+                : `Commitments due by ${new Date(
+                    commitmentDeadline * 1000
+                  ).toLocaleDateString()}`}
+            </span>
+          )}
         {votingEndTime && phase === ElectionPhase.Voting && (
           <span className="text-sm text-gray-400">
             {votingEnded
@@ -74,7 +176,7 @@ function ElectionContent({
         )}
       </div>
 
-      {/* Registration Phase */}
+      {/* Registration Phase — Candidates declare */}
       {phase === ElectionPhase.Registration && (
         <>
           <DeclareCandidacy
@@ -85,11 +187,11 @@ function ElectionContent({
             <div>
               <h3 className="text-lg font-semibold text-white mb-4">
                 Declared Candidates ({candidates.length}/3 needed to start
-                voting)
+                {isV3 ? " commitment collection" : " voter registration"})
               </h3>
               <div className="space-y-4">
                 {candidates.map((c, i) => (
-                  <CandidateCard key={i} candidate={c} index={i} />
+                  <CandidateWithImage key={i} candidate={c} index={i} collectionAddress={collectionAddress} />
                 ))}
               </div>
             </div>
@@ -97,30 +199,72 @@ function ElectionContent({
         </>
       )}
 
+      {/* V2 only: Voter Registration Phase */}
+      {!isV3 && phase === ElectionPhase.VoterRegistration && (
+        <>
+          <VoterRegistration
+            electionAddress={electionAddress}
+            nftContractAddress={collectionAddress}
+            voterRegistrationEndTime={voterRegistrationEndTime!}
+          />
+
+          {candidates.length > 0 && (
+            <div>
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Candidates
+              </h3>
+              <div className="space-y-4">
+                {candidates.map((c, i) => (
+                  <CandidateWithImage key={i} candidate={c} index={i} collectionAddress={collectionAddress} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {registrationEnded && (
+            <button
+              onClick={() => openVoting()}
+              disabled={openVotingPending}
+              className="w-full py-3 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 rounded-lg font-semibold transition-colors"
+            >
+              {openVotingPending ? "Opening voting..." : "Open Voting Phase"}
+            </button>
+          )}
+        </>
+      )}
+
       {/* Voting Phase */}
       {phase === ElectionPhase.Voting && (
         <>
-          <VotingBooth
-            electionAddress={electionAddress}
-            nftContractAddress={collectionAddress}
-            candidates={candidates}
-            votingEndTime={votingEndTime!}
-          />
+          {isV3 ? (
+            <VotingBoothV3
+              electionAddress={electionAddress}
+              candidates={candidates}
+              votingEndTime={votingEndTime!}
+              collectionAddress={collectionAddress}
+            />
+          ) : (
+            <VotingBooth
+              electionAddress={electionAddress}
+              candidates={candidates}
+              votingEndTime={votingEndTime!}
+              groupId={groupId}
+              collectionAddress={collectionAddress}
+            />
+          )}
           {votingEnded && (
             <button
               onClick={() => finalize()}
               disabled={finalizePending}
               className="w-full py-3 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-700 rounded-lg font-semibold transition-colors"
             >
-              {finalizePending
-                ? "Finalizing..."
-                : "Finalize Election"}
+              {finalizePending ? "Finalizing..." : "Finalize Election"}
             </button>
           )}
         </>
       )}
 
-      {/* Finalized Phase */}
+      {/* Finalized Phase — Results */}
       {phase === ElectionPhase.Finalized && (
         <div className="space-y-6">
           <h3 className="text-lg font-semibold text-white">
@@ -131,10 +275,11 @@ function ElectionContent({
               .slice()
               .sort((a, b) => Number(b.voteCount - a.voteCount))
               .map((c, i) => (
-                <CandidateCard
+                <CandidateWithImage
                   key={i}
                   candidate={c}
                   index={i}
+                  collectionAddress={collectionAddress}
                   isWinner={
                     winners?.[0] === c.wallet || winners?.[1] === c.wallet
                   }

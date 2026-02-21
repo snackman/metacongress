@@ -15,12 +15,23 @@ export function VotingPowerCard({
   tokenName,
   tokenSymbol,
 }: VotingPowerCardProps) {
-  const { data: votes } = useReadContract({
+  // Standard ERC20Votes: getVotes
+  const { data: votesStandard } = useReadContract({
     address: tokenAddress,
     abi: ERC20_VOTES_ABI,
     functionName: "getVotes",
     args: [SENATE_SAFE_ADDRESS],
   });
+
+  // Legacy (UNI, COMP): getCurrentVotes
+  const { data: votesLegacy } = useReadContract({
+    address: tokenAddress,
+    abi: ERC20_VOTES_ABI,
+    functionName: "getCurrentVotes",
+    args: [SENATE_SAFE_ADDRESS],
+  });
+
+  const votes = votesStandard ?? votesLegacy;
 
   const { data: decimals } = useReadContract({
     address: tokenAddress,

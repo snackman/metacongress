@@ -1,7 +1,7 @@
 "use client";
 
 import { useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { SENATE_ELECTION_ABI } from "@/lib/contracts";
+import { SENATE_ELECTION_V2_ABI, SENATE_ALLOCATION_ABI } from "@/lib/contracts";
 
 export function useDeclareCandidacy(electionAddress: `0x${string}`) {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
@@ -13,7 +13,7 @@ export function useDeclareCandidacy(electionAddress: `0x${string}`) {
   function declareCandidacy(tokenId: bigint, name: string, platform: string) {
     writeContract({
       address: electionAddress,
-      abi: SENATE_ELECTION_ABI,
+      abi: SENATE_ELECTION_V2_ABI,
       functionName: "declareCandidacy",
       args: [tokenId, name, platform],
     });
@@ -29,23 +29,48 @@ export function useDeclareCandidacy(electionAddress: `0x${string}`) {
   };
 }
 
-export function useCastVote(electionAddress: `0x${string}`) {
+export function useDeclareCandidacyAllocation(allocationAddress: `0x${string}`) {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
 
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
 
-  function vote(tokenId: bigint, candidateIndex: bigint, comment: string) {
+  function declareCandidacy(tokenId: bigint, name: string, platform: string) {
     writeContract({
-      address: electionAddress,
-      abi: SENATE_ELECTION_ABI,
-      functionName: "vote",
-      args: [tokenId, candidateIndex, comment],
+      address: allocationAddress,
+      abi: SENATE_ALLOCATION_ABI,
+      functionName: "declareCandidacy",
+      args: [tokenId, name, platform],
     });
   }
 
-  return { vote, isPending, isConfirming, isSuccess, error, hash };
+  return {
+    declareCandidacy,
+    isPending,
+    isConfirming,
+    isSuccess,
+    error,
+    hash,
+  };
+}
+
+export function useOpenVoting(electionAddress: `0x${string}`) {
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
+
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+    hash,
+  });
+
+  function openVoting() {
+    writeContract({
+      address: electionAddress,
+      abi: SENATE_ELECTION_V2_ABI,
+      functionName: "openVoting",
+    });
+  }
+
+  return { openVoting, isPending, isConfirming, isSuccess, error, hash };
 }
 
 export function useFinalizeElection(electionAddress: `0x${string}`) {
@@ -58,7 +83,7 @@ export function useFinalizeElection(electionAddress: `0x${string}`) {
   function finalize() {
     writeContract({
       address: electionAddress,
-      abi: SENATE_ELECTION_ABI,
+      abi: SENATE_ELECTION_V2_ABI,
       functionName: "finalizeElection",
     });
   }

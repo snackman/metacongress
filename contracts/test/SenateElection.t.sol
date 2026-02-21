@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "../src/SenateElection.sol";
-import "../src/ElectionFactory.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
 contract MockNFT is ERC721 {
@@ -19,7 +18,6 @@ contract MockNFT is ERC721 {
 }
 
 contract SenateElectionTest is Test {
-    ElectionFactory public factory;
     MockNFT public nft;
     SenateElection public election;
 
@@ -34,7 +32,6 @@ contract SenateElectionTest is Test {
     uint256 public daveToken;
 
     function setUp() public {
-        factory = new ElectionFactory();
         nft = new MockNFT();
 
         // Mint NFTs
@@ -43,11 +40,18 @@ contract SenateElectionTest is Test {
         carolToken = nft.mint(carol);
         daveToken = nft.mint(dave);
 
-        // Whitelist and create election
-        factory.whitelistCollection(address(nft), "MockNFT");
-        address electionAddr = factory.createElection(address(nft));
-        election = SenateElection(electionAddr);
+        // Deploy V1 election directly (factory now deploys V2)
+        election = new SenateElection(
+            address(nft),
+            0,
+            address(this),
+            7 days,
+            false
+        );
     }
+
+    // Stub for the factory callback
+    function onElectionFinalized(address, address[2] calldata) external {}
 
     function test_initialState() public view {
         assertEq(uint256(election.phase()), uint256(SenateElection.ElectionPhase.Registration));

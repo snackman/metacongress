@@ -45,20 +45,12 @@ export default function SenatePage() {
             {safeOwners.length !== 1 ? "s" : ""} across all communities
           </p>
         </div>
-        <div className="flex gap-3">
-          <Link
-            href="/senate/proposals"
-            className="px-4 py-2 border border-gray-700 hover:border-gray-500 rounded-lg text-sm transition-colors"
-          >
-            Proposals
-          </Link>
-          <Link
-            href="/senate/delegations"
-            className="px-4 py-2 border border-gray-700 hover:border-gray-500 rounded-lg text-sm transition-colors"
-          >
-            Delegations
-          </Link>
-        </div>
+        <Link
+          href="/senate/proposals"
+          className="px-4 py-2 border border-gray-700 hover:border-gray-500 rounded-lg text-sm transition-colors"
+        >
+          Proposals
+        </Link>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-8">
