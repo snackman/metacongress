@@ -12,7 +12,6 @@ export interface Nomination {
   nominator: `0x${string}`;
   reason: string;
   timestamp: bigint;
-  forRemoval: boolean;
 }
 
 export function useNominations() {

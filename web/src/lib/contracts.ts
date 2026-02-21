@@ -92,7 +92,6 @@ export const ELECTION_FACTORY_ABI = [
       { name: "nftContract", type: "address" },
       { name: "name", type: "string" },
       { name: "reason", type: "string" },
-      { name: "forRemoval", type: "bool" },
       { name: "memberCollection", type: "address" },
       { name: "memberTokenId", type: "uint256" },
     ],
@@ -113,7 +112,6 @@ export const ELECTION_FACTORY_ABI = [
           { name: "nominator", type: "address" },
           { name: "reason", type: "string" },
           { name: "timestamp", type: "uint256" },
-          { name: "forRemoval", type: "bool" },
         ],
       },
     ],
@@ -248,7 +246,6 @@ export const ELECTION_FACTORY_ABI = [
       { name: "name", type: "string", indexed: false },
       { name: "nominator", type: "address", indexed: true },
       { name: "reason", type: "string", indexed: false },
-      { name: "forRemoval", type: "bool", indexed: false },
     ],
   },
   {

@@ -22,7 +22,6 @@ interface Nomination {
   nominator: `0x${string}`;
   reason: string;
   timestamp: bigint;
-  forRemoval: boolean;
 }
 
 function NominationForm() {
@@ -123,7 +122,6 @@ function NominationForm() {
         contractAddress as `0x${string}`,
         nameToSubmit,
         reason.trim(),
-        mode === "remove",
         memberCollection as `0x${string}`,
         BigInt(memberTokenId),
       ],
@@ -371,14 +369,8 @@ function NominationsList() {
                 {nom.nftContract}
               </p>
             </div>
-            <span
-              className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${
-                nom.forRemoval
-                  ? "bg-red-500/20 text-red-300"
-                  : "bg-green-500/20 text-green-300"
-              }`}
-            >
-              {nom.forRemoval ? "Remove" : "Add"}
+            <span className="px-2.5 py-0.5 text-xs font-medium rounded-full bg-yellow-500/20 text-yellow-300">
+              Pending
             </span>
           </div>
           {nom.reason && (
