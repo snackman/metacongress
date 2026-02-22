@@ -30,10 +30,13 @@ function NftThumbnail({
     queryKey: ["nft-image", contractAddress, tokenId.toString()],
     queryFn: async () => {
       const meta = await getNFTMetadata(contractAddress, tokenId.toString());
+      const rawImage = (meta.raw?.metadata as Record<string, string> | undefined)?.image;
       return (
         meta.image?.thumbnailUrl ??
         meta.image?.cachedUrl ??
+        meta.image?.pngUrl ??
         meta.image?.originalUrl ??
+        rawImage ??
         null
       );
     },
@@ -66,10 +69,13 @@ function CollectionLogo({ contractAddress }: { contractAddress: string }) {
             contractAddress,
             tokenId.toString()
           );
+          const rawImage = (meta.raw?.metadata as Record<string, string> | undefined)?.image;
           const url =
             meta.image?.thumbnailUrl ??
             meta.image?.cachedUrl ??
+            meta.image?.pngUrl ??
             meta.image?.originalUrl ??
+            rawImage ??
             null;
           if (url) return url;
         } catch {

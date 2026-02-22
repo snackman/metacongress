@@ -23,10 +23,13 @@ function useNftImage(contractAddress: string, tokenId: bigint) {
     queryKey: ["nft-image", contractAddress, tokenId.toString()],
     queryFn: async () => {
       const meta = await getNFTMetadata(contractAddress, tokenId.toString());
+      const rawImage = (meta.raw?.metadata as Record<string, string> | undefined)?.image;
       return (
         meta.image?.thumbnailUrl ??
         meta.image?.cachedUrl ??
+        meta.image?.pngUrl ??
         meta.image?.originalUrl ??
+        rawImage ??
         null
       );
     },
