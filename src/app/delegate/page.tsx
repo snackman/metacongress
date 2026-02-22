@@ -11,9 +11,7 @@ export default function DelegatePage() {
         <div>
           <h1 className="text-3xl font-bold text-white mb-2">Delegate Tokens</h1>
           <p className="text-gray-400">
-            Delegate your DAO governance tokens to the Meta Senate. Your tokens stay
-            in your wallet — only voting power is delegated. Senators vote on
-            proposals on your behalf.
+            Delegate your DAO governance tokens to the Meta Senate. Senators vote on proposals on your behalf.
           </p>
         </div>
         <Link

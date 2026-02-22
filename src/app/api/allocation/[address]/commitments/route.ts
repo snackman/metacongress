@@ -4,10 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { mainnet } from "viem/chains";
 import { Identity, Group } from "@semaphore-protocol/core";
 import { ELECTION_FACTORY_ABI, ELECTION_FACTORY_ADDRESS } from "@/lib/contracts";
-import * as fs from "fs";
-import * as path from "path";
-
-const COMMITMENTS_DIR = path.join(process.cwd(), "commitments");
+import { supabase } from "@/lib/supabase";
 
 /** Delay (ms) before a commitment is included in the active Merkle tree.
  *  Default 0 for dev; set COMMITMENT_DELAY_MS=86400000 in production for 24h. */
@@ -37,34 +34,52 @@ function getSignMessage(allocationAddress: string, walletAddress: string, tokenI
   return `MetaSenate Vote Allocation\nAllocation: ${allocationAddress}\nWallet: ${walletAddress}\nTokenId: ${tokenId}`;
 }
 
-function getCommitmentsPath(allocationAddress: string): string {
-  return path.join(COMMITMENTS_DIR, `allocation-${allocationAddress.toLowerCase()}.json`);
-}
-
-interface StoredCommitment {
-  ownerHash: string;
-  commitment: string;
-  submittedAt: number;
-}
-
-function readCommitments(allocationAddress: string): StoredCommitment[] {
-  const filePath = getCommitmentsPath(allocationAddress);
-  if (!fs.existsSync(filePath)) return [];
-  const data = fs.readFileSync(filePath, "utf-8");
-  return JSON.parse(data);
-}
-
-function writeCommitments(allocationAddress: string, commitments: StoredCommitment[]) {
-  if (!fs.existsSync(COMMITMENTS_DIR)) {
-    fs.mkdirSync(COMMITMENTS_DIR, { recursive: true });
-  }
-  const filePath = getCommitmentsPath(allocationAddress);
-  fs.writeFileSync(filePath, JSON.stringify(commitments, null, 2));
-}
-
 /** Compute a deterministic hash of wallet+tokenId for deduplication without storing raw values. */
 function computeOwnerHash(wallet: string, tokenId: string): string {
   return keccak256(toBytes(`${wallet.toLowerCase()}:${tokenId}`));
+}
+
+interface StoredCommitment {
+  owner_hash: string;
+  commitment: string;
+  submitted_at: number;
+}
+
+async function readCommitments(allocationAddress: string): Promise<StoredCommitment[]> {
+  const { data, error } = await supabase
+    .from("allocation_commitments")
+    .select("owner_hash, commitment, submitted_at")
+    .eq("allocation_address", allocationAddress.toLowerCase());
+
+  if (error) {
+    console.error("Supabase read error:", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+async function upsertCommitment(
+  allocationAddress: string,
+  ownerHash: string,
+  commitment: string,
+  submittedAt: number
+): Promise<void> {
+  const { error } = await supabase
+    .from("allocation_commitments")
+    .upsert(
+      {
+        allocation_address: allocationAddress.toLowerCase(),
+        owner_hash: ownerHash,
+        commitment,
+        submitted_at: submittedAt,
+      },
+      { onConflict: "allocation_address,owner_hash" }
+    );
+
+  if (error) {
+    console.error("Supabase upsert error:", error);
+    throw new Error("Failed to store commitment");
+  }
 }
 
 export async function POST(
@@ -140,26 +155,18 @@ export async function POST(
 
     // 4. Store commitment using ownerHash for deduplication (no raw wallet stored)
     const ownerHash = computeOwnerHash(wallet, tokenId);
-    const commitments = readCommitments(allocationAddress);
-    const existingIdx = commitments.findIndex(
-      (c) => c.ownerHash === ownerHash
-    );
     const now = Date.now();
-    if (existingIdx >= 0) {
-      commitments[existingIdx] = { ownerHash, commitment, submittedAt: now };
-    } else {
-      commitments.push({ ownerHash, commitment, submittedAt: now });
-    }
-    writeCommitments(allocationAddress, commitments);
+    await upsertCommitment(allocationAddress, ownerHash, commitment, now);
 
     // Auto-push updated eligibility root on-chain
     const deployerKey = process.env.DEPLOYER_PRIVATE_KEY;
     if (deployerKey) {
       try {
-        // Compute root from all matured commitments
+        // Re-read all commitments to compute root
+        const commitments = await readCommitments(allocationAddress);
         const now2 = Date.now();
         const matured = commitments.filter(
-          (c) => now2 - c.submittedAt >= COMMITMENT_DELAY_MS
+          (c) => now2 - c.submitted_at >= COMMITMENT_DELAY_MS
         );
         const commitmentValues = matured.map((c) => c.commitment);
 
@@ -225,12 +232,12 @@ export async function GET(
 ) {
   try {
     const { address: allocationAddress } = await params;
-    const commitments = readCommitments(allocationAddress);
+    const commitments = await readCommitments(allocationAddress);
 
     // Only include commitments that have matured past the configured delay
     const now = Date.now();
     const matured = commitments.filter(
-      (c) => now - c.submittedAt >= COMMITMENT_DELAY_MS
+      (c) => now - c.submitted_at >= COMMITMENT_DELAY_MS
     );
 
     const commitmentValues = matured.map((c) => c.commitment);
