@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
-import { getCollectionBySlug } from "@/lib/constants";
+import { getCollectionBySlug, getCryptoPunksImageUrl } from "@/lib/constants";
 import { getNFTMetadata } from "@/lib/alchemy";
 import {
   useCurrentElection,
@@ -28,7 +28,7 @@ function useNftImage(contractAddress: string, tokenId: bigint) {
     queryFn: async () => {
       const meta = await getNFTMetadata(contractAddress, tokenId.toString());
       const rawImage = (meta.raw?.metadata as Record<string, string> | undefined)?.image;
-      return meta.image?.thumbnailUrl ?? meta.image?.cachedUrl ?? meta.image?.pngUrl ?? meta.image?.originalUrl ?? rawImage ?? null;
+      return meta.image?.thumbnailUrl ?? meta.image?.cachedUrl ?? meta.image?.pngUrl ?? meta.image?.originalUrl ?? rawImage ?? getCryptoPunksImageUrl(contractAddress, tokenId.toString()) ?? null;
     },
     staleTime: 5 * 60_000,
   });

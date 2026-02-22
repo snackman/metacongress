@@ -102,6 +102,22 @@ export function getCollectionBySlug(slug: string) {
   return SUPPORTED_COLLECTIONS.find((c) => c.slug === slug);
 }
 
+const CRYPTOPUNKS_ADDRESS = "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB";
+
+/**
+ * CryptoPunks predate ERC721, so Alchemy often returns no image metadata.
+ * This provides a reliable fallback URL for CryptoPunks images.
+ */
+export function getCryptoPunksImageUrl(
+  contractAddress: string,
+  tokenId: string
+): string | null {
+  if (contractAddress.toLowerCase() === CRYPTOPUNKS_ADDRESS.toLowerCase()) {
+    return `https://cryptopunks.app/cryptopunks/cryptopunk${tokenId}.png`;
+  }
+  return null;
+}
+
 export function getCollectionByAddress(address: string) {
   return SUPPORTED_COLLECTIONS.find(
     (c) => c.address.toLowerCase() === address.toLowerCase()

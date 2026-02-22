@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
-import { SUPPORTED_COLLECTIONS } from "@/lib/constants";
+import { SUPPORTED_COLLECTIONS, getCryptoPunksImageUrl } from "@/lib/constants";
 import { getNFTMetadata } from "@/lib/alchemy";
 import {
   useCurrentElection,
@@ -37,6 +37,7 @@ function NftThumbnail({
         meta.image?.pngUrl ??
         meta.image?.originalUrl ??
         rawImage ??
+        getCryptoPunksImageUrl(contractAddress, tokenId.toString()) ??
         null
       );
     },
@@ -76,6 +77,7 @@ function CollectionLogo({ contractAddress }: { contractAddress: string }) {
             meta.image?.pngUrl ??
             meta.image?.originalUrl ??
             rawImage ??
+            getCryptoPunksImageUrl(contractAddress, tokenId.toString()) ??
             null;
           if (url) return url;
         } catch {

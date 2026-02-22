@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
-import { getCollectionBySlug } from "@/lib/constants";
+import { getCollectionBySlug, getCryptoPunksImageUrl } from "@/lib/constants";
 import { getNFTMetadata } from "@/lib/alchemy";
 import {
   useAllocationAddress,
@@ -30,6 +30,7 @@ function useNftImage(contractAddress: string, tokenId: bigint) {
         meta.image?.pngUrl ??
         meta.image?.originalUrl ??
         rawImage ??
+        getCryptoPunksImageUrl(contractAddress, tokenId.toString()) ??
         null
       );
     },
