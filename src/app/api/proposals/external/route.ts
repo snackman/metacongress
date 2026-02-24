@@ -43,35 +43,52 @@ const TALLY_STATUS_MAP: Record<string, ProposalState> = {
   QUEUED: "queued",
   EXPIRED: "expired",
   EXECUTED: "executed",
+  pending: "pending",
+  active: "active",
+  canceled: "canceled",
+  defeated: "defeated",
+  succeeded: "succeeded",
+  queued: "queued",
+  expired: "expired",
+  executed: "executed",
+};
+
+const TALLY_DAO_SLUGS: Record<string, string> = {
+  ENS: "ens",
+  UNI: "uniswap",
+  ARB: "arbitrum",
+  OP: "optimism",
 };
 
 // ---------------------------------------------------------------------------
 // Tally fetcher
 // ---------------------------------------------------------------------------
 const TALLY_QUERY = `
-query Proposals($governorIds: [AccountID!]!) {
-  proposals(
-    where: { governorId_in: $governorIds }
-    sort: { isDescending: true, sortBy: id }
-    first: 10
-  ) {
+query GovernorProposals($input: ProposalsInput!) {
+  proposals(input: $input) {
     nodes {
       ... on Proposal {
         id
         onchainId
-        title
-        description
+        status
+        metadata {
+          title
+          description
+        }
         proposer { address }
-        start { timestamp }
-        end { timestamp }
+        start {
+          ... on Block { timestamp }
+          ... on BlocklessTimestamp { timestamp }
+        }
+        end {
+          ... on Block { timestamp }
+          ... on BlocklessTimestamp { timestamp }
+        }
         voteStats {
           type
           votesCount
           votersCount
           percent
-        }
-        statusChanges {
-          type
         }
         governor {
           id
@@ -94,50 +111,25 @@ interface TallyVoteStat {
 interface TallyProposalNode {
   id: string;
   onchainId: string;
-  title: string;
-  description: string;
+  status: string;
+  metadata: { title: string; description: string };
   proposer: { address: string };
   start: { timestamp: string };
   end: { timestamp: string };
   voteStats: TallyVoteStat[];
-  statusChanges: { type: string }[];
   governor: { id: string; name: string; chainId: string };
 }
 
 async function fetchTallyProposals(): Promise<ExternalProposal[]> {
   const apiKey = process.env.TALLY_API_KEY;
-  if (!apiKey) return [];
+  if (!apiKey) {
+    console.warn("TALLY_API_KEY not set, skipping Tally proposals");
+    return [];
+  }
 
   const governorTokens = DAO_TOKENS.filter(
     (t) => t.governance.type === "governor" && "governorAddress" in t.governance
   );
-
-  // Build governor account IDs (eip155:{chainId}:{address})
-  const governorIds = governorTokens.map((t) => {
-    const eip155 = CHAIN_TO_EIP155[t.chain];
-    const addr = (t.governance as { governorAddress: string }).governorAddress;
-    return `${eip155}:${addr}`;
-  });
-
-  const res = await fetch("https://api.tally.xyz/query", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Api-Key": apiKey,
-    },
-    body: JSON.stringify({
-      query: TALLY_QUERY,
-      variables: { governorIds },
-    }),
-  });
-
-  if (!res.ok) {
-    console.error("Tally API error:", res.status, await res.text());
-    return [];
-  }
-
-  const json = await res.json();
-  const nodes: TallyProposalNode[] = json?.data?.proposals?.nodes ?? [];
 
   // Build a lookup from governorAddress (lowercased) to DAO_TOKENS entry
   const governorLookup = new Map(
@@ -147,22 +139,71 @@ async function fetchTallyProposals(): Promise<ExternalProposal[]> {
     ])
   );
 
+  // Query each governor separately (Tally no longer supports governorId_in)
+  const perGovernorFetches = governorTokens.map(async (t) => {
+    const eip155 = CHAIN_TO_EIP155[t.chain];
+    const addr = (t.governance as { governorAddress: string }).governorAddress;
+    const governorId = `${eip155}:${addr}`;
+
+    const res = await fetch("https://api.tally.xyz/query", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Api-Key": apiKey,
+      },
+      body: JSON.stringify({
+        query: TALLY_QUERY,
+        variables: {
+          input: {
+            filters: { governorId },
+            page: { limit: 10 },
+            sort: { isDescending: true, sortBy: "id" },
+          },
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      console.error(`Tally API error for ${t.symbol}:`, res.status, await res.text());
+      return [] as TallyProposalNode[];
+    }
+
+    const json = await res.json();
+    if (json.errors) {
+      console.error(`Tally GraphQL errors for ${t.symbol}:`, JSON.stringify(json.errors));
+      return [] as TallyProposalNode[];
+    }
+    return (json?.data?.proposals?.nodes ?? []) as TallyProposalNode[];
+  });
+
+  const results = await Promise.all(perGovernorFetches);
+  const nodes = results.flat();
+
   return nodes.map((node) => {
     // Governor ID format from Tally: "eip155:{chainId}:{address}"
     const govAddress = node.governor.id.split(":").pop() ?? "";
     const token = governorLookup.get(govAddress.toLowerCase());
 
-    // Resolve state from last status change
-    const lastStatus = node.statusChanges[node.statusChanges.length - 1]?.type ?? "PENDING";
-    const state: ProposalState = TALLY_STATUS_MAP[lastStatus] ?? "pending";
+    // Status is now a direct field
+    const state: ProposalState = TALLY_STATUS_MAP[node.status] ?? "pending";
 
-    // Extract vote stats
-    const forStat = node.voteStats.find((v) => v.type === "FOR");
-    const againstStat = node.voteStats.find((v) => v.type === "AGAINST");
-    const abstainStat = node.voteStats.find((v) => v.type === "ABSTAIN");
+    // Extract vote stats (Tally now returns lowercase type values)
+    const forStat = node.voteStats.find((v) => v.type === "for" || v.type === "FOR");
+    const againstStat = node.voteStats.find((v) => v.type === "against" || v.type === "AGAINST");
+    const abstainStat = node.voteStats.find((v) => v.type === "abstain" || v.type === "ABSTAIN");
 
-    // Build the external URL using governor name lowercased as slug
-    const daoSlug = node.governor.name.toLowerCase().replace(/\s+/g, "-");
+    // Parse timestamps — Tally may return ISO 8601 strings or unix timestamps
+    const parseTimestamp = (ts: string | undefined): number | undefined => {
+      if (!ts) return undefined;
+      const num = Number(ts);
+      if (!isNaN(num) && num < 1e12) return num; // already unix seconds
+      if (!isNaN(num) && num >= 1e12) return Math.floor(num / 1000); // unix ms
+      return Math.floor(new Date(ts).getTime() / 1000); // ISO string
+    };
+
+    // Build external URL using known DAO slugs
+    const daoSlug = TALLY_DAO_SLUGS[token?.symbol ?? ""] ??
+      node.governor.name.toLowerCase().replace(/\s+/g, "-");
     const externalUrl = `https://www.tally.xyz/gov/${daoSlug}/proposal/${node.onchainId}`;
 
     return {
@@ -174,11 +215,11 @@ async function fetchTallyProposals(): Promise<ExternalProposal[]> {
       governanceType: "governor" as const,
       governorType: (token?.governance as { governorType?: string } | undefined)?.governorType === "governorBravo" ? "governorBravo" as const : "ozGovernor" as const,
       proposalId: node.onchainId,
-      title: node.title,
-      description: node.description,
+      title: node.metadata?.title ?? "",
+      description: node.metadata?.description ?? "",
       proposer: node.proposer?.address ?? "",
-      startTimestamp: node.start?.timestamp ? Number(node.start.timestamp) : undefined,
-      endTimestamp: node.end?.timestamp ? Number(node.end.timestamp) : undefined,
+      startTimestamp: parseTimestamp(node.start?.timestamp),
+      endTimestamp: parseTimestamp(node.end?.timestamp),
       state,
       forVotes: forStat?.votesCount ?? "0",
       againstVotes: againstStat?.votesCount ?? "0",
