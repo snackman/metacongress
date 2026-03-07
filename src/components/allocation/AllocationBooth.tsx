@@ -5,6 +5,8 @@ import { useAccount } from "wagmi";
 import { useAllocationIdentity } from "@/hooks/useAllocationIdentity";
 import { useAllocationCommitment } from "@/hooks/useAllocationCommitment";
 import { useAllocateVote } from "@/hooks/useAllocateVote";
+import type { BatchVoteResults } from "@/hooks/useAllocateVote";
+import type { Identity } from "@semaphore-protocol/core";
 import { useNFTs } from "@/hooks/useNFTs";
 import { type AllocationCandidate } from "@/hooks/useAllocation";
 import { CandidateCard } from "@/components/election/CandidateCard";
@@ -33,8 +35,10 @@ export function AllocationBooth({
     collectionAddress as `0x${string}`
   );
   const {
-    allocateVote,
+    batchAllocateVote,
     withdrawVote,
+    isBatchVoting,
+    batchProgress,
     isGeneratingProof,
     isSending,
     isConfirming,
@@ -44,7 +48,7 @@ export function AllocationBooth({
   } = useAllocateVote(allocationAddress);
   const { data: nfts } = useNFTs(address, collectionAddress);
 
-  const [activeTokenId, setActiveTokenId] = useState<string | null>(null);
+  const [checkedTokens, setCheckedTokens] = useState<Set<string>>(new Set());
   const [selectedCandidate, setSelectedCandidate] = useState<number | null>(
     null
   );
@@ -57,6 +61,9 @@ export function AllocationBooth({
     new Set()
   );
   const [isRegistering, setIsRegistering] = useState(false);
+  const [batchResults, setBatchResults] = useState<BatchVoteResults | null>(
+    null
+  );
 
   if (!address) {
     return (
@@ -76,36 +83,114 @@ export function AllocationBooth({
     );
   }
 
-  const isBusy = isRegistering || isSubmitting || isGeneratingProof || isSending || isConfirming;
+  const isBusy =
+    isRegistering ||
+    isSubmitting ||
+    isGeneratingProof ||
+    isSending ||
+    isConfirming ||
+    isBatchVoting;
 
-  async function handleSelectToken(tokenId: string) {
-    const isUnlocked = hasIdentity(tokenId) || isSubmittedForToken(tokenId);
+  // NFTs available for checking (not already voted, or withdrawn)
+  const selectableTokens = nfts.filter(
+    (nft) => !votedTokens.has(nft.tokenId) || withdrawnTokens.has(nft.tokenId)
+  );
 
-    if (!isUnlocked) {
-      // Auto-register: submit commitment + create identity transparently
+  function toggleToken(tokenId: string) {
+    setCheckedTokens((prev) => {
+      const next = new Set(prev);
+      if (next.has(tokenId)) {
+        next.delete(tokenId);
+      } else {
+        next.add(tokenId);
+      }
+      return next;
+    });
+  }
+
+  function selectAll() {
+    setCheckedTokens(new Set(selectableTokens.map((nft) => nft.tokenId)));
+  }
+
+  function deselectAll() {
+    setCheckedTokens(new Set());
+  }
+
+  const allSelected =
+    selectableTokens.length > 0 &&
+    selectableTokens.every((nft) => checkedTokens.has(nft.tokenId));
+
+  async function handleBatchVote(e: React.FormEvent) {
+    e.preventDefault();
+    if (selectedCandidate === null || checkedTokens.size === 0) return;
+
+    setBatchResults(null);
+
+    // Step 1: Register any unregistered tokens
+    const tokensToRegister = Array.from(checkedTokens).filter(
+      (tokenId) => !hasIdentity(tokenId) && !isSubmittedForToken(tokenId)
+    );
+
+    if (tokensToRegister.length > 0) {
       setIsRegistering(true);
-      try {
-        await submitCommitment(tokenId);
-      } catch {
-        setIsRegistering(false);
-        return;
+      for (const tokenId of tokensToRegister) {
+        try {
+          await submitCommitment(tokenId);
+        } catch {
+          // If registration fails, remove from checked set and continue
+          setCheckedTokens((prev) => {
+            const next = new Set(prev);
+            next.delete(tokenId);
+            return next;
+          });
+        }
       }
       setIsRegistering(false);
     }
 
-    setActiveTokenId(tokenId);
-    setSelectedCandidate(null);
-    setComment("");
-  }
+    // Step 2: Build the votes array from checked tokens that have identities
+    const votes: Array<{ identity: Identity; tokenId: string }> = [];
+    Array.from(checkedTokens).forEach((tokenId) => {
+      const identity = identities.get(tokenId);
+      if (identity) {
+        votes.push({ identity, tokenId });
+      }
+    });
 
-  async function handleVote(e: React.FormEvent) {
-    e.preventDefault();
-    if (selectedCandidate === null || !activeTokenId) return;
+    if (votes.length === 0) return;
 
-    const identity = identities.get(activeTokenId);
-    if (!identity) return;
+    // Step 3: Batch vote
+    const results = await batchAllocateVote(
+      votes,
+      selectedCandidate,
+      comment.trim()
+    );
 
-    await allocateVote(identity, selectedCandidate, comment.trim());
+    // Mark succeeded tokens as voted
+    if (results.succeeded.length > 0) {
+      setVotedTokens((prev) => {
+        const next = new Set(prev);
+        for (const tokenId of results.succeeded) {
+          next.add(tokenId);
+        }
+        return next;
+      });
+      setWithdrawnTokens((prev) => {
+        const next = new Set(prev);
+        for (const tokenId of results.succeeded) {
+          next.delete(tokenId);
+        }
+        return next;
+      });
+    }
+
+    // Clear checked tokens and show results
+    setCheckedTokens(new Set());
+    setBatchResults(results);
+    if (results.failed.length === 0) {
+      setSelectedCandidate(null);
+      setComment("");
+    }
   }
 
   async function handleWithdraw(tokenId: string) {
@@ -116,35 +201,18 @@ export function AllocationBooth({
     await withdrawVote(identity);
   }
 
-  // After successful vote or withdrawal, mark token accordingly and reset
-  if (isSuccess && (activeTokenId || withdrawingTokenId)) {
-    if (withdrawingTokenId) {
-      const justWithdrawnToken = withdrawingTokenId;
-      setWithdrawnTokens((prev) => new Set(prev).add(justWithdrawnToken));
-      setVotedTokens((prev) => {
-        const next = new Set(prev);
-        next.delete(justWithdrawnToken);
-        return next;
-      });
-      setWithdrawingTokenId(null);
-    } else if (activeTokenId) {
-      const justVotedToken = activeTokenId;
-      setVotedTokens((prev) => new Set(prev).add(justVotedToken));
-      setWithdrawnTokens((prev) => {
-        const next = new Set(prev);
-        next.delete(justVotedToken);
-        return next;
-      });
-      setActiveTokenId(null);
-    }
-    setSelectedCandidate(null);
-    setComment("");
+  // After successful withdrawal, mark token accordingly and reset
+  if (isSuccess && withdrawingTokenId) {
+    const justWithdrawnToken = withdrawingTokenId;
+    setWithdrawnTokens((prev) => new Set(prev).add(justWithdrawnToken));
+    setVotedTokens((prev) => {
+      const next = new Set(prev);
+      next.delete(justWithdrawnToken);
+      return next;
+    });
+    setWithdrawingTokenId(null);
     reset();
   }
-
-  const activeIdentity = activeTokenId
-    ? identities.get(activeTokenId)
-    : null;
 
   return (
     <div className="space-y-6">
@@ -152,21 +220,36 @@ export function AllocationBooth({
         Allocate Your Votes
       </h3>
       <p className="text-sm text-gray-400">
-        You get 1 vote per NFT you own. Select an NFT to cast its vote.
+        You get 1 vote per NFT you own. Select NFTs, pick a candidate, then
+        vote all at once.
       </p>
 
-      {/* NFT list with status */}
+      {/* Select All / Deselect All */}
+      {selectableTokens.length > 1 && (
+        <div className="flex gap-2">
+          <button
+            onClick={allSelected ? deselectAll : selectAll}
+            disabled={isBusy}
+            className="text-xs text-indigo-400 hover:text-indigo-300 disabled:text-gray-600 transition-colors"
+          >
+            {allSelected ? "Deselect All" : "Select All"}
+          </button>
+        </div>
+      )}
+
+      {/* NFT list with checkboxes */}
       <div className="space-y-2">
         {nfts.map((nft) => {
           const tokenId = nft.tokenId;
-          const hasVoted = votedTokens.has(tokenId);
-          const isActive = activeTokenId === tokenId;
+          const hasVoted =
+            votedTokens.has(tokenId) && !withdrawnTokens.has(tokenId);
+          const isChecked = checkedTokens.has(tokenId);
 
           return (
             <div
               key={tokenId}
               className={`flex items-center justify-between p-3 rounded-lg border ${
-                isActive
+                isChecked
                   ? "border-indigo-500 bg-indigo-500/10"
                   : hasVoted
                   ? "border-green-700 bg-green-900/10"
@@ -174,6 +257,19 @@ export function AllocationBooth({
               }`}
             >
               <div className="flex items-center gap-3">
+                {/* Checkbox for selectable NFTs */}
+                {!hasVoted ? (
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => toggleToken(tokenId)}
+                    disabled={isBusy}
+                    className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                ) : (
+                  <div className="w-4" />
+                )}
+
                 {nft.image?.thumbnailUrl ? (
                   <img
                     src={nft.image.thumbnailUrl}
@@ -188,7 +284,7 @@ export function AllocationBooth({
                 </span>
               </div>
 
-              {hasVoted && !withdrawnTokens.has(tokenId) ? (
+              {hasVoted ? (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-green-400 font-medium">
                     Voted
@@ -203,19 +299,11 @@ export function AllocationBooth({
                       : "Withdraw"}
                   </button>
                 </div>
-              ) : isActive ? (
+              ) : isChecked ? (
                 <span className="text-xs text-indigo-400 font-medium">
-                  Voting...
+                  Selected
                 </span>
-              ) : (
-                <button
-                  onClick={() => handleSelectToken(tokenId)}
-                  disabled={isBusy}
-                  className="px-3 py-1 text-xs bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-800 disabled:text-gray-600 rounded font-medium transition-colors"
-                >
-                  {isRegistering ? "Preparing..." : "Vote"}
-                </button>
-              )}
+              ) : null}
             </div>
           );
         })}
@@ -233,11 +321,11 @@ export function AllocationBooth({
         </p>
       )}
 
-      {/* Candidate selection — shown when a token is active */}
-      {activeTokenId && activeIdentity && candidates.length > 0 && (
+      {/* Candidate selection — shown when any tokens are checked */}
+      {checkedTokens.size > 0 && candidates.length > 0 && (
         <div className="space-y-4">
           <h4 className="text-sm font-medium text-gray-400">
-            Select a candidate for NFT #{activeTokenId}
+            Select a candidate
           </h4>
           {candidates
             .slice()
@@ -250,8 +338,8 @@ export function AllocationBooth({
                   candidate={candidate}
                   index={originalIndex}
                   selected={selectedCandidate === originalIndex}
-                  onSelect={setSelectedCandidate}
-                  selectable
+                  onSelect={isBusy ? undefined : setSelectedCandidate}
+                  selectable={!isBusy}
                   nftImageUrl={candidate.profileImageUri || undefined}
                 />
               );
@@ -259,7 +347,7 @@ export function AllocationBooth({
 
           {/* Cast vote form */}
           {selectedCandidate !== null && (
-            <form onSubmit={handleVote} className="space-y-4">
+            <form onSubmit={handleBatchVote} className="space-y-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
                   Comment (optional, max 280 chars)
@@ -269,7 +357,8 @@ export function AllocationBooth({
                   rows={2}
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
-                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:border-indigo-500 focus:outline-none resize-none"
+                  disabled={isBusy}
+                  className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:border-indigo-500 focus:outline-none resize-none disabled:opacity-50"
                   placeholder="Why are you voting for this candidate?"
                 />
               </div>
@@ -279,26 +368,34 @@ export function AllocationBooth({
                 disabled={isBusy}
                 className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-semibold transition-colors"
               >
-                {isGeneratingProof
-                  ? "Generating ZK proof..."
-                  : isSending
-                  ? "Submitting vote..."
-                  : isConfirming
-                  ? "Confirming on-chain..."
-                  : `Allocate Vote (NFT #${activeTokenId})`}
+                {isRegistering
+                  ? "Registering NFTs..."
+                  : `Vote with ${checkedTokens.size} NFT${checkedTokens.size !== 1 ? "s" : ""}`}
               </button>
 
-              {isGeneratingProof && (
-                <p className="text-xs text-gray-500 text-center">
-                  Proof generation may take 5-15 seconds
-                </p>
+              {/* Batch progress */}
+              {isBatchVoting && batchProgress && (
+                <div className="space-y-2">
+                  <div className="w-full bg-gray-800 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+                      style={{
+                        width: `${(batchProgress.current / batchProgress.total) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-sm text-gray-400 text-center">
+                    NFT #{batchProgress.tokenId} — {batchProgress.phase}
+                    <span className="text-gray-600 ml-2">
+                      ({batchProgress.current} / {batchProgress.total})
+                    </span>
+                  </p>
+                </div>
               )}
 
-              {voteError && !withdrawingTokenId && (
-                <p className="text-red-400 text-sm">
-                  {voteError.message.includes("SameCandidate")
-                    ? "This NFT already voted for this candidate. Choose a different one to reallocate."
-                    : "Vote failed. Please try again."}
+              {isRegistering && (
+                <p className="text-xs text-gray-500 text-center">
+                  Sign the message for each NFT to register it for voting
                 </p>
               )}
             </form>
@@ -306,15 +403,47 @@ export function AllocationBooth({
         </div>
       )}
 
+      {/* Batch results */}
+      {batchResults && (
+        <div className="space-y-2">
+          {batchResults.succeeded.length > 0 && (
+            <div className="p-3 rounded-lg bg-green-900/20 border border-green-800">
+              <p className="text-sm text-green-300">
+                {batchResults.succeeded.length} vote
+                {batchResults.succeeded.length !== 1 ? "s" : ""} cast
+                successfully.
+              </p>
+            </div>
+          )}
+          {batchResults.failed.length > 0 && (
+            <div className="p-3 rounded-lg bg-red-900/20 border border-red-800 space-y-1">
+              <p className="text-sm text-red-300">
+                {batchResults.failed.length} vote
+                {batchResults.failed.length !== 1 ? "s" : ""} failed:
+              </p>
+              {batchResults.failed.map(({ tokenId, error }) => (
+                <p key={tokenId} className="text-xs text-red-400">
+                  NFT #{tokenId}:{" "}
+                  {error.includes("SameCandidate")
+                    ? "Already voted for this candidate"
+                    : error}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Summary */}
-      {(votedTokens.size > 0 || withdrawnTokens.size > 0) && (
+      {votedTokens.size > 0 && !batchResults && (
         <div className="p-3 rounded-lg bg-green-900/20 border border-green-800">
           <p className="text-sm text-green-300">
             {votedTokens.size} of {nfts.length} NFT
             {nfts.length !== 1 ? "s" : ""} voted.
             {withdrawnTokens.size > 0 && (
               <span className="text-yellow-300">
-                {" "}{withdrawnTokens.size} withdrawn.
+                {" "}
+                {withdrawnTokens.size} withdrawn.
               </span>
             )}
             {" "}All votes are anonymous.
