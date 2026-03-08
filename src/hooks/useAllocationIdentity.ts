@@ -85,10 +85,25 @@ export function useAllocationIdentity(
     }
   }, [allocationAddress, address, signMessageAsync]);
 
+  /** Store an already-created identity without re-signing. */
+  const storeIdentity = useCallback((tokenId: string, identity: Identity) => {
+    if (!allocationAddress || !address) return;
+
+    const key = getStorageKey(allocationAddress, address, tokenId);
+    localStorage.setItem(key, identity.export());
+
+    setIdentities((prev) => {
+      const next = new Map(prev);
+      next.set(tokenId, identity);
+      return next;
+    });
+  }, [allocationAddress, address]);
+
   return {
     identities,
     getIdentity: (tokenId: string) => identities.get(tokenId) ?? null,
     createIdentity,
+    storeIdentity,
     hasIdentity: (tokenId: string) => identities.has(tokenId),
     hasAnyIdentity: identities.size > 0,
     isCreating,

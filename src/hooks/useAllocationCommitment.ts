@@ -14,7 +14,7 @@ export function useAllocationCommitment(
 ) {
   const { address } = useAccount();
   const { signMessageAsync } = useSignMessage();
-  const { identities, hasAnyIdentity, createIdentity, isCreating } =
+  const { identities, hasAnyIdentity, createIdentity, storeIdentity, isCreating } =
     useAllocationIdentity(allocationAddress);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedTokens, setSubmittedTokens] = useState<Set<string>>(new Set());
@@ -55,8 +55,10 @@ export function useAllocationCommitment(
           throw new Error(data.error || "Failed to submit commitment");
         }
 
-        // Also create the identity for this token
-        await createIdentity(tokenId);
+        // Store the identity from the SAME signature used for the commitment.
+        // Do NOT call createIdentity() here — it would re-sign and produce a
+        // different identity that won't match the commitment in the DB.
+        storeIdentity(tokenId, id);
 
         setSubmittedTokens((prev) => new Set(prev).add(tokenId));
       } catch (err) {
