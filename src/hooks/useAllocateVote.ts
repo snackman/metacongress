@@ -237,13 +237,38 @@ export function useAllocateVote(
       setError(null);
 
       try {
-        // Fetch commitments once for the entire batch
-        const commitmentsData = await fetchCommitments(allocationAddress);
-        if (!commitmentsData.commitments.length) {
-          throw new Error("No commitments found — please try again shortly");
+        // Fetch commitments — retry up to 3 times to allow newly registered
+        // commitments to appear in the API response.
+        let group: Group | null = null;
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const commitmentsData = await fetchCommitments(allocationAddress);
+          if (!commitmentsData.commitments.length) {
+            if (attempt < 2) {
+              await new Promise((r) => setTimeout(r, 2000));
+              continue;
+            }
+            throw new Error("No commitments found — please try again shortly");
+          }
+
+          const commitmentSet = new Set(commitmentsData.commitments);
+          const allPresent = votes.every((v) =>
+            commitmentSet.has(v.identity.commitment.toString())
+          );
+
+          group = new Group(commitmentsData.commitments.map(BigInt));
+
+          if (allPresent) break;
+
+          // Some commitments missing — wait and retry
+          if (attempt < 2) {
+            await new Promise((r) => setTimeout(r, 2000));
+          }
         }
 
-        const group = new Group(commitmentsData.commitments.map(BigInt));
+        if (!group) {
+          throw new Error("No commitments found — please try again shortly");
+        }
 
         for (let i = 0; i < votes.length; i++) {
           const { identity, tokenId } = votes[i];

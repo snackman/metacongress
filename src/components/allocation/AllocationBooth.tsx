@@ -146,6 +146,9 @@ export function AllocationBooth({
         }
       }
       setIsRegistering(false);
+
+      // Wait for commitments to propagate after registration
+      await new Promise((r) => setTimeout(r, 2000));
     }
 
     // Step 2: Build the votes array from checked tokens that have identities
