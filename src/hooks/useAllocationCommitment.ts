@@ -22,7 +22,7 @@ export function useAllocationCommitment(
 
   const submitCommitment = useCallback(
     async (tokenId: string) => {
-      if (!allocationAddress || !address || !nftContract) return;
+      if (!allocationAddress || !address || !nftContract) return null;
 
       setIsSubmitting(true);
       setError(null);
@@ -61,13 +61,18 @@ export function useAllocationCommitment(
         storeIdentity(tokenId, id);
 
         setSubmittedTokens((prev) => new Set(prev).add(tokenId));
+
+        // Return the identity so callers can use it immediately without
+        // waiting for React state to update.
+        return id;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Submission failed");
+        return null;
       } finally {
         setIsSubmitting(false);
       }
     },
-    [allocationAddress, address, nftContract, signMessageAsync, createIdentity]
+    [allocationAddress, address, nftContract, signMessageAsync, storeIdentity]
   );
 
   return {

@@ -126,6 +126,10 @@ export function AllocationBooth({
 
     setBatchResults(null);
 
+    // Collect identities directly — can't rely on React state updating
+    // mid-async-function (stale closure).
+    const collectedIdentities = new Map<string, Identity>();
+
     // Step 1: Register any unregistered tokens
     const tokensToRegister = Array.from(checkedTokens).filter(
       (tokenId) => !hasIdentity(tokenId) && !isSubmittedForToken(tokenId)
@@ -135,7 +139,10 @@ export function AllocationBooth({
       setIsRegistering(true);
       for (const tokenId of tokensToRegister) {
         try {
-          await submitCommitment(tokenId);
+          const id = await submitCommitment(tokenId);
+          if (id) {
+            collectedIdentities.set(tokenId, id as Identity);
+          }
         } catch {
           // If registration fails, remove from checked set and continue
           setCheckedTokens((prev) => {
@@ -151,10 +158,11 @@ export function AllocationBooth({
       await new Promise((r) => setTimeout(r, 2000));
     }
 
-    // Step 2: Build the votes array from checked tokens that have identities
+    // Step 2: Build the votes array — use collected identities for newly
+    // registered tokens, fall back to the identities map for existing ones.
     const votes: Array<{ identity: Identity; tokenId: string }> = [];
     Array.from(checkedTokens).forEach((tokenId) => {
-      const identity = identities.get(tokenId);
+      const identity = collectedIdentities.get(tokenId) || identities.get(tokenId);
       if (identity) {
         votes.push({ identity, tokenId });
       }
