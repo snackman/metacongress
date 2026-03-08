@@ -130,14 +130,43 @@ export function AllocationBooth({
     // mid-async-function (stale closure).
     const collectedIdentities = new Map<string, Identity>();
 
-    // Step 1: Register any unregistered tokens
-    const tokensToRegister = Array.from(checkedTokens).filter(
-      (tokenId) => !hasIdentity(tokenId) && !isSubmittedForToken(tokenId)
+    // Step 0: Fetch current commitments from API so we can detect stale
+    // localStorage identities whose commitment isn't in the tree.
+    let knownCommitments: Set<string> = new Set();
+    try {
+      const res = await fetch(
+        `/api/allocation/${allocationAddress}/commitments`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        knownCommitments = new Set(data.commitments as string[]);
+      }
+    } catch {
+      // If fetch fails, proceed anyway — we'll catch errors later
+    }
+
+    // Step 1: Register tokens that either have no identity OR have a stale
+    // identity whose commitment doesn't match what's in the DB.
+    const tokensNeedingRegistration = Array.from(checkedTokens).filter(
+      (tokenId) => {
+        if (!hasIdentity(tokenId) && !isSubmittedForToken(tokenId)) {
+          return true; // No identity at all
+        }
+        // Has identity — check if its commitment is in the tree
+        const existingIdentity = identities.get(tokenId);
+        if (existingIdentity) {
+          const commitment = existingIdentity.commitment.toString();
+          if (!knownCommitments.has(commitment)) {
+            return true; // Stale identity — commitment not in tree
+          }
+        }
+        return false;
+      }
     );
 
-    if (tokensToRegister.length > 0) {
+    if (tokensNeedingRegistration.length > 0) {
       setIsRegistering(true);
-      for (const tokenId of tokensToRegister) {
+      for (const tokenId of tokensNeedingRegistration) {
         try {
           const id = await submitCommitment(tokenId);
           if (id) {
