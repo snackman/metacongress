@@ -8,7 +8,13 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { mainnet } from "viem/chains";
-import { SENATE_ALLOCATION_ABI } from "@/lib/contracts";
+import {
+  SENATE_ALLOCATION_ABI,
+  ELECTION_FACTORY_ABI,
+  ELECTION_FACTORY_ADDRESS,
+} from "@/lib/contracts";
+import { getSupabase } from "@/lib/supabase";
+import { Group } from "@semaphore-protocol/core";
 
 export async function POST(
   request: NextRequest,
@@ -80,6 +86,71 @@ export async function POST(
       transport: http(rpcUrl),
     });
 
+    const contractAddress = getAddress(allocationAddress);
+
+    // Check if the on-chain eligibility root matches the proof's Merkle root.
+    // If not, auto-update the root before submitting the vote.
+    const onChainRoot = await publicClient.readContract({
+      address: contractAddress,
+      abi: SENATE_ALLOCATION_ABI,
+      functionName: "eligibilityRoot",
+    });
+
+    const proofRoot = BigInt(proof.merkleTreeRoot);
+
+    if (BigInt(onChainRoot as bigint) !== proofRoot) {
+      // Root mismatch — need to update on-chain root first.
+      // Read the NFT contract address from the allocation contract.
+      const nftContract = await publicClient.readContract({
+        address: contractAddress,
+        abi: SENATE_ALLOCATION_ABI,
+        functionName: "nftContract",
+      }) as `0x${string}`;
+
+      // Compute the current root from all commitments in the DB.
+      const supabase = getSupabase();
+      const { data: commitments } = await supabase
+        .from("allocation_commitments")
+        .select("commitment")
+        .eq("allocation_address", allocationAddress.toLowerCase());
+
+      if (commitments && commitments.length > 0) {
+        const group = new Group(commitments.map((c: { commitment: string }) => BigInt(c.commitment)));
+        const dbRoot = group.root;
+
+        // Only update if the DB root matches what the proof expects
+        if (dbRoot === proofRoot) {
+          const deployerKey = process.env.DEPLOYER_PRIVATE_KEY;
+          const updateAccount = deployerKey
+            ? privateKeyToAccount(deployerKey as `0x${string}`)
+            : account;
+          const updateWalletClient = createWalletClient({
+            account: updateAccount,
+            chain: mainnet,
+            transport: http(rpcUrl),
+          });
+
+          const updateHash = await updateWalletClient.writeContract({
+            address: ELECTION_FACTORY_ADDRESS,
+            abi: ELECTION_FACTORY_ABI,
+            functionName: "updateAllocationRoot",
+            args: [getAddress(nftContract), dbRoot],
+          });
+          await publicClient.waitForTransactionReceipt({ hash: updateHash });
+        } else {
+          return NextResponse.json(
+            { error: "Proof root does not match current commitments. Please try again." },
+            { status: 409 }
+          );
+        }
+      } else {
+        return NextResponse.json(
+          { error: "No commitments found in database" },
+          { status: 409 }
+        );
+      }
+    }
+
     // Build the proof tuple with BigInt values
     const proofTuple = {
       merkleTreeDepth: BigInt(proof.merkleTreeDepth),
@@ -113,8 +184,6 @@ export async function POST(
         args: [proofTuple],
       });
     }
-
-    const contractAddress = getAddress(allocationAddress);
 
     const hash = await walletClient.sendTransaction({
       to: contractAddress,
