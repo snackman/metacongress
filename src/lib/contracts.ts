@@ -334,6 +334,15 @@ export const ELECTION_FACTORY_ABI = [
 ] as const;
 
 export const SENATE_ALLOCATION_ABI = [
+  // Custom errors for better diagnostics
+  { type: "error", name: "Semaphore__InvalidProof", inputs: [] },
+  { type: "error", name: "InvalidProof", inputs: [] },
+  { type: "error", name: "InvalidMerkleTreeRoot", inputs: [] },
+  { type: "error", name: "NullifierAlreadyUsed", inputs: [] },
+  { type: "error", name: "InvalidCandidate", inputs: [] },
+  { type: "error", name: "SameCandidate", inputs: [] },
+  { type: "error", name: "NoExistingVote", inputs: [] },
+  { type: "error", name: "NotAuthorized", inputs: [] },
   {
     type: "function",
     name: "nftContract",

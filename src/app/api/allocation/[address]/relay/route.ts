@@ -3,7 +3,6 @@ import {
   createWalletClient,
   createPublicClient,
   http,
-  encodeFunctionData,
   getAddress,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -98,6 +97,12 @@ export async function POST(
 
     const proofRoot = BigInt(proof.merkleTreeRoot);
 
+    console.log("Relay root check:", {
+      onChainRoot: (onChainRoot as bigint).toString(),
+      proofRoot: proofRoot.toString(),
+      match: BigInt(onChainRoot as bigint) === proofRoot,
+    });
+
     if (BigInt(onChainRoot as bigint) !== proofRoot) {
       // Root mismatch — need to update on-chain root first.
       // Read the NFT contract address from the allocation contract.
@@ -170,25 +175,86 @@ export async function POST(
       ],
     };
 
-    let data: `0x${string}`;
-    if (functionName === "allocateVote") {
-      data = encodeFunctionData({
-        abi: SENATE_ALLOCATION_ABI,
-        functionName: "allocateVote",
-        args: [proofTuple, comment],
-      });
-    } else {
-      data = encodeFunctionData({
-        abi: SENATE_ALLOCATION_ABI,
-        functionName: "withdrawVote",
-        args: [proofTuple],
-      });
-    }
+    // Use writeContract with simulation for better error messages
+    let hash: `0x${string}`;
 
-    const hash = await walletClient.sendTransaction({
-      to: contractAddress,
-      data,
-    });
+    try {
+      if (functionName === "allocateVote") {
+        // Simulate first to get readable error on failure
+        const { request: simRequest } = await publicClient.simulateContract({
+          address: contractAddress,
+          abi: SENATE_ALLOCATION_ABI,
+          functionName: "allocateVote",
+          args: [proofTuple, comment],
+          account: account,
+        });
+        hash = await walletClient.writeContract(simRequest);
+      } else {
+        const { request: simRequest } = await publicClient.simulateContract({
+          address: contractAddress,
+          abi: SENATE_ALLOCATION_ABI,
+          functionName: "withdrawVote",
+          args: [proofTuple],
+          account: account,
+        });
+        hash = await walletClient.writeContract(simRequest);
+      }
+    } catch (simErr: unknown) {
+      // Extract detailed revert reason from simulation failure
+      console.error("Contract simulation/execution failed:", simErr);
+
+      let revertReason = "Transaction would revert";
+
+      if (simErr && typeof simErr === "object") {
+        const errObj = simErr as Record<string, unknown>;
+
+        // Viem ContractFunctionExecutionError has nested cause with revert data
+        if (errObj.cause && typeof errObj.cause === "object") {
+          const cause = errObj.cause as Record<string, unknown>;
+          // Check for decoded error name (e.g., "InvalidProof", "NullifierAlreadyUsed")
+          if (cause.data && typeof cause.data === "object") {
+            const data = cause.data as Record<string, unknown>;
+            if (data.errorName) {
+              revertReason = `${data.errorName}${data.args ? `(${JSON.stringify(data.args)})` : ""}`;
+            }
+          }
+          // Check for raw revert reason string
+          if (cause.reason && typeof cause.reason === "string") {
+            revertReason = cause.reason;
+          }
+          // Check shortMessage
+          if (cause.shortMessage && typeof cause.shortMessage === "string") {
+            revertReason = cause.shortMessage;
+          }
+        }
+
+        // Top-level shortMessage from viem
+        if (errObj.shortMessage && typeof errObj.shortMessage === "string") {
+          revertReason = errObj.shortMessage;
+        }
+
+        // Include metaMessages for additional context
+        if (Array.isArray(errObj.metaMessages) && errObj.metaMessages.length > 0) {
+          revertReason += " | " + errObj.metaMessages.join(" | ");
+        }
+      }
+
+      // Log full diagnostic info
+      console.error("Relay diagnostic info:", {
+        contractAddress,
+        functionName,
+        proofMerkleRoot: proof.merkleTreeRoot,
+        proofNullifier: proof.nullifier,
+        proofMessage: proof.message,
+        proofScope: proof.scope,
+        revertReason,
+      });
+
+      return NextResponse.json(
+        { error: revertReason },
+        { status: 422 }
+      );
+    }
 
     // Wait for confirmation
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
