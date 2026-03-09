@@ -451,6 +451,12 @@ contract ElectionFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         return address(allocation);
     }
 
+    /// @notice Override the allocation contract address for a collection (for migration/fixes).
+    function setAllocation(address nftContract, address allocation) external onlyOwner {
+        allocationContracts[nftContract] = allocation;
+        emit AllocationCreated(nftContract, allocation);
+    }
+
     function updateAllocationRoot(address nftContract, uint256 newRoot) external onlyOwner {
         address allocation = allocationContracts[nftContract];
         if (allocation == address(0)) revert NotWhitelisted();
